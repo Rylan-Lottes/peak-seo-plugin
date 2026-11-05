@@ -1,0 +1,26 @@
+.peak-seo .peak-intro { font-size: 14px; max-width: 760px; }
+.peak-seo .peak-empty { background: #fff; border: 1px solid #dcdcde; border-radius: 8px; padding: 24px; margin: 16px 0; color: #50575e; max-width: 960px; }
+.peak-seo .peak-card { background: #fff; border: 1px solid #dcdcde; border-radius: 8px; padding: 20px 24px; margin: 16px 0; max-width: 960px; }
+.peak-seo .peak-card-head { color: #50575e; font-size: 13px; }
+.peak-seo .peak-kind { display: inline-block; background: #f0f6fc; color: #0a4b78; border-radius: 4px; padding: 2px 8px; font-weight: 600; }
+.peak-seo .peak-summary { margin: 10px 0 6px; font-size: 17px; }
+.peak-seo .peak-reason { color: #3c434a; margin-top: 0; }
+.peak-seo .peak-compare { width: 100%; border-collapse: collapse; margin: 12px 0; }
+.peak-seo .peak-compare th, .peak-seo .peak-compare td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid #f0f0f1; }
+.peak-seo .peak-compare thead th { color: #50575e; font-weight: 600; }
+.peak-seo .peak-compare tbody th { width: 120px; color: #50575e; }
+.peak-seo .peak-count { color: #50575e; font-size: 12px; margin-top: 4px; }
+.peak-seo .peak-count.peak-over { color: #b32d2e; }
+.peak-seo .peak-serp { border: 1px solid #f0f0f1; border-radius: 8px; padding: 12px 16px; margin: 12px 0; max-width: 620px; font-family: arial, sans-serif; }
+.peak-seo .peak-serp-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #8c8f94; margin-bottom: 6px; }
+.peak-seo .peak-serp-url { color: #202124; font-size: 13px; }
+.peak-seo .peak-serp-title { color: #1a0dab; font-size: 19px; line-height: 1.3; margin: 2px 0; }
+.peak-seo .peak-serp-desc { color: #4d5156; font-size: 14px; line-height: 1.5; }
+.peak-seo .peak-actions { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+.peak-seo .peak-inline { display: inline; margin: 0; }
+.peak-seo .peak-history { max-width: 960px; }
+.peak-seo .peak-status { border-radius: 4px; padding: 2px 8px; font-size: 12px; font-weight: 600; }
+.peak-seo .peak-status-approved { background: #edfaef; color: #00450c; }
+.peak-seo .peak-status-rejected { background: #f6f7f7; color: #50575e; }
+.peak-seo .peak-status-undone { background: #fcf9e8; color: #614200; }
+.peak-seo table.diff { margin: 12px 0; }
