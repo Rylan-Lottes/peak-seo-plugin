@@ -14,6 +14,8 @@ Examples:
   python3 tools/peak_client.py propose-seo 12 --title "Water Heater Repair in Huntsville, AL | Test Plumbing" \
       --description "Same-day water heater repair..." --summary "Better search title" --reason "Adds the city people search for"
   python3 tools/peak_client.py propose-content 12 --content-file new.html --summary "Expand the page"
+  python3 tools/peak_client.py texts 35            # Elementor text widgets and their ids
+  python3 tools/peak_client.py propose-elementor 35 --edit e1264aa "Same-day plumbing in Huntsville, AL"       --summary "Clearer homepage heading"
   python3 tools/peak_client.py propose-page --title "Tankless Water Heaters" --content-file page.html --summary "New service page"
   python3 tools/peak_client.py proposals --status pending
 """
@@ -76,6 +78,12 @@ def main():
     s = sub.add_parser("propose-content"); s.add_argument("id", type=int)
     s.add_argument("--title"); s.add_argument("--content-file"); s.add_argument("--excerpt")
     s.add_argument("--summary", required=True); s.add_argument("--reason", default="")
+    s = sub.add_parser("texts"); s.add_argument("id", type=int)
+    s = sub.add_parser("propose-elementor"); s.add_argument("id", type=int)
+    s.add_argument("--edit", nargs=2, action="append", required=True, metavar=("WIDGET_ID", "TEXT"),
+                   help="Elementor widget id and its new text (repeat for several widgets)")
+    s.add_argument("--title")
+    s.add_argument("--summary", required=True); s.add_argument("--reason", default="")
     s = sub.add_parser("propose-page")
     s.add_argument("--title", required=True); s.add_argument("--content-file", required=True); s.add_argument("--slug")
     s.add_argument("--summary", required=True); s.add_argument("--reason", default="")
@@ -90,6 +98,19 @@ def main():
         r = call(a.site, a.key, "GET", "/pages")
     elif a.cmd == "page":
         r = call(a.site, a.key, "GET", f"/pages/{a.id}")
+    elif a.cmd == "texts":
+        status, body = call(a.site, a.key, "GET", f"/pages/{a.id}")
+        if status >= 400:
+            print(f"HTTP {status}"); print(json.dumps(body, indent=2)); sys.exit(1)
+        if body.get("page_builder") != "elementor":
+            sys.exit(f"Page {a.id} is not built with Elementor (content_editing: {body.get('content_editing')}).")
+        for f in body.get("elementor_text", []):
+            print(f"{f['id']}  {f['label']:<9}  {f['text'][:90]!r}")
+        sys.exit(0)
+    elif a.cmd == "propose-elementor":
+        changes = {"elementor": [{"id": wid, "text": text} for wid, text in a.edit]}
+        if a.title: changes["title"] = a.title
+        r = call(a.site, a.key, "POST", "/proposals", {"kind": "update_content", "target_id": a.id, "changes": changes, "summary": a.summary, "reason": a.reason})
     elif a.cmd == "proposals":
         r = call(a.site, a.key, "GET", "/proposals", params={"status": a.status} if a.status else None)
     elif a.cmd == "proposal":
