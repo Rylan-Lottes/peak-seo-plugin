@@ -195,6 +195,11 @@ class Peak_SEO_Admin {
 			if ( isset( $c['title'] ) ) {
 				echo wp_text_diff( $page->post_title, $c['title'], array( 'title' => 'Page title', 'title_left' => 'Now', 'title_right' => 'Proposed' ) ); // phpcs:ignore WordPress.Security.EscapeOutput
 			}
+			if ( ! empty( $c['elementor'] ) ) {
+				foreach ( $c['elementor'] as $e ) {
+					echo wp_text_diff( $e['before'], $e['text'], array( 'title' => 'Elementor ' . strtolower( $e['label'] ) . ' (' . $e['id'] . ')', 'title_left' => 'Now', 'title_right' => 'Proposed' ) ); // phpcs:ignore WordPress.Security.EscapeOutput
+				}
+			}
 			if ( isset( $c['content'] ) ) {
 				echo wp_text_diff( $page->post_content, $c['content'], array( 'title' => 'Page content', 'title_left' => 'Now', 'title_right' => 'Proposed' ) ); // phpcs:ignore WordPress.Security.EscapeOutput
 			}

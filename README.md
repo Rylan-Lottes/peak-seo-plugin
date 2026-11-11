@@ -2,7 +2,7 @@
 
 Connects a WordPress site to the Peak SEO service. The service reads the site and sends **proposals** (better search titles and descriptions, improved page content, new pages). Nothing changes on the site until someone approves it in the WordPress dashboard, and every approved change can be undone.
 
-Version 0.1.0. This is the first working version, built to test the full loop on a test site.
+Version 0.2.0. An early version, built to test the full loop on a test site.
 
 ## What it does
 
@@ -22,11 +22,17 @@ Search titles and descriptions are written into whichever SEO plugin the site us
 
 ### Page builders
 
-Pages built with **Elementor, Divi, Beaver Builder, WPBakery or Cornerstone** store their layout outside the normal page content, so v0 refuses *content* edits on those pages (search title/description edits still work). Regular block-editor and classic pages support content edits.
+Pages built with a page builder store their layout outside the normal page content.
+
+- **Elementor**: the service can change the text of headings, text editors and buttons (classic widgets and the Elementor 4 atomic `e-heading`, `e-paragraph`, `e-button`). Each edit names the widget by its Elementor id. Only that text setting changes; layout, styles and every other setting are left alone. Approving checks that the text hasn't been changed in Elementor since the proposal arrived, so nothing you edited yourself gets overwritten. Preview and undo work as on normal pages.
+- A post only counts as an Elementor page when its saved layout has at least one widget. Clicking "Edit with Elementor" without saving marks a post as Elementor but leaves its normal content in use, so such posts are treated as regular posts.
+- **Divi, Beaver Builder, WPBakery and Cornerstone**: content edits are refused (search title/description edits still work).
+
+Regular block-editor and classic pages support content edits.
 
 ## Install on a test site
 
-1. Build the zip: `./tools/build-zip.sh` (creates `dist/peak-seo-0.1.0.zip`), or download it from the latest commit.
+1. Build the zip: `./tools/build-zip.sh` or `python tools/build_zip.py` (creates `dist/peak-seo-0.2.0.zip`). The shell script uses `zip` when installed and falls back to Python, so it works in Git Bash on Windows.
 2. In WordPress: **Plugins → Add New → Upload Plugin**, choose the zip, **Activate**.
 3. Go to **Peak SEO → Settings** and copy the site key.
 
@@ -64,7 +70,7 @@ X-Peak-Signature: hex(HMAC_SHA256(site_key, "<timestamp>\n<METHOD>\n<route>\n<ra
 |---|---|---|
 | GET | `/site` | Site name, URL, versions, theme, SEO plugin, page builders |
 | GET | `/pages` | Published pages and posts with SEO fields |
-| GET | `/pages/{id}` | One page, including raw `content` and `rendered` HTML |
+| GET | `/pages/{id}` | One page, including raw `content`, `rendered` HTML and, on Elementor pages, `elementor_text` |
 | POST | `/proposals` | Submit a proposal (below) |
 | GET | `/proposals?status=pending` | List proposals |
 | GET | `/proposals/{id}` | One proposal with its status and log |
@@ -82,12 +88,14 @@ Proposal body:
 ```
 
 - `update_content` changes: `title`, `content` (HTML; filtered with `wp_kses_post`), `excerpt`
+- `update_content` on an Elementor page (`page_builder: "elementor"`): `title` and/or `elementor`, a list of `{ "id": "<widget id>", "text": "..." }`. Get the ids from `GET /pages/{id}` → `elementor_text`. Headings and buttons keep only inline tags (`strong`, `em`, `span`, `br`, links in headings); text editors accept normal post HTML. `content` and `excerpt` are refused on Elementor pages.
 - `create_page` changes: `title`, `content`, optional `slug`, `parent_id` (no `target_id`)
 
-## Not in v0 yet
+## Not supported yet
 
 - Email approvals (approval happens in the dashboard only)
-- Editing content inside page builders (Elementor, Divi, etc.)
+- Editing content inside Divi, Beaver Builder, WPBakery or Cornerstone
+- Elementor: images, links, and text in widgets other than headings, text editors and buttons
 - All in One SEO fields, redirects, slug changes on existing pages
 - Automatic updates from Peak SEO's own server
 

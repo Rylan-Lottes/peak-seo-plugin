@@ -7,7 +7,7 @@
  * Namespace: /wp-json/peak-seo/v1
  *   GET  /site               site info + which SEO plugin and builders are present
  *   GET  /pages              pages and posts with SEO fields (no full content)
- *   GET  /pages/{id}         one page with full content
+ *   GET  /pages/{id}         one page with full content (and Elementor text widgets)
  *   POST /proposals          submit a proposal
  *   GET  /proposals          list proposals (?status=pending|approved|rejected|undone)
  *   GET  /proposals/{id}     one proposal
@@ -63,7 +63,13 @@ class Peak_SEO_Rest {
 	}
 
 	private static function summarize( $post ) {
-		$seo = Peak_SEO_Fields::get( $post->ID );
+		$seo     = Peak_SEO_Fields::get( $post->ID );
+		$builder = Peak_SEO_Proposals::page_builder( $post->ID );
+		if ( 'elementor' === $builder ) {
+			$editable = 'elementor_text';
+		} else {
+			$editable = '' === $builder ? 'content' : 'none';
+		}
 		return array(
 			'id'              => $post->ID,
 			'type'            => $post->post_type,
@@ -74,7 +80,8 @@ class Peak_SEO_Rest {
 			'modified'        => mysql_to_rfc3339( $post->post_modified_gmt ),
 			'seo_title'       => $seo['seo_title'],
 			'seo_description' => $seo['seo_description'],
-			'page_builder'    => Peak_SEO_Proposals::page_builder( $post->ID ),
+			'page_builder'    => $builder,
+			'content_editing' => $editable, // content | elementor_text | none
 			'word_count'      => str_word_count( wp_strip_all_tags( $post->post_content ) ),
 		);
 	}
@@ -101,6 +108,16 @@ class Peak_SEO_Rest {
 		$out['content']  = $post->post_content;
 		$out['excerpt']  = $post->post_excerpt;
 		$out['rendered'] = apply_filters( 'the_content', $post->post_content ); // What visitors see, including builder output.
+		if ( 'elementor' === $out['page_builder'] ) {
+			// Text widgets the service can edit, by Elementor element id.
+			$out['elementor_text'] = array_map(
+				function ( $f ) {
+					unset( $f['field'] );
+					return $f;
+				},
+				Peak_SEO_Elementor::text_fields( Peak_SEO_Elementor::get_data( $post->ID ) )
+			);
+		}
 		return $out;
 	}
 

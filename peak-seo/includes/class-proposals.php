@@ -7,7 +7,8 @@
  *
  * Kinds:
  *   update_seo      change a page's SEO title and/or meta description
- *   update_content  change a page's title, content and/or excerpt
+ *   update_content  change a page's title, content and/or excerpt; on Elementor
+ *                   pages, change widget text through `elementor` edits instead
  *   create_page     add a new page (saved as a draft until approved)
  */
 
@@ -43,11 +44,12 @@ class Peak_SEO_Proposals {
 
 	/**
 	 * Name of the page builder that controls this page's layout, or ''.
-	 * Content written by a page builder is not stored as plain post content,
-	 * so v0 refuses content edits on those pages (SEO field edits still work).
+	 * Content written by a page builder is not stored as plain post content.
+	 * Elementor pages accept text edits through `changes.elementor`; other
+	 * builders refuse content edits (SEO field edits always work).
 	 */
 	public static function page_builder( $post_id ) {
-		if ( 'builder' === get_post_meta( $post_id, '_elementor_edit_mode', true ) ) {
+		if ( Peak_SEO_Elementor::is_built_with( $post_id ) ) {
 			return 'elementor';
 		}
 		if ( 'on' === get_post_meta( $post_id, '_et_pb_use_builder', true ) ) {
@@ -136,8 +138,21 @@ class Peak_SEO_Proposals {
 
 		if ( 'update_content' === $kind ) {
 			$builder = self::page_builder( $target );
-			if ( '' !== $builder ) {
+			if ( 'elementor' === $builder ) {
+				if ( isset( $changes['content'] ) || isset( $changes['excerpt'] ) ) {
+					return self::error( 'peak_page_builder', 'This page is built with Elementor. Send text edits as "elementor": [{"id": "<widget id>", "text": "..."}] instead of "content".' );
+				}
+				if ( isset( $changes['elementor'] ) ) {
+					$edits = Peak_SEO_Elementor::clean_edits( Peak_SEO_Elementor::get_data( $target ), $changes['elementor'] );
+					if ( is_wp_error( $edits ) ) {
+						return $edits;
+					}
+					$clean['elementor'] = $edits;
+				}
+			} elseif ( '' !== $builder ) {
 				return self::error( 'peak_page_builder', "This page is built with {$builder}; content edits are not supported on it yet. SEO field edits still work." );
+			} elseif ( isset( $changes['elementor'] ) ) {
+				return self::error( 'peak_not_elementor', 'This page is not built with Elementor. Send "content" instead.' );
 			}
 			if ( isset( $changes['title'] ) ) {
 				$clean['title'] = sanitize_text_field( $changes['title'] );
@@ -268,22 +283,40 @@ class Peak_SEO_Proposals {
 			if ( ! $post ) {
 				return self::error( 'peak_bad_target', 'The page no longer exists.' );
 			}
-			$seo = Peak_SEO_Fields::get( $target );
-			self::save_snapshot(
-				$id,
-				array(
-					'title'           => $post->post_title,
-					'content'         => $post->post_content,
-					'excerpt'         => $post->post_excerpt,
-					'seo_title'       => $seo['seo_title'],
-					'seo_description' => $seo['seo_description'],
-				)
+			$seo  = Peak_SEO_Fields::get( $target );
+			$snap = array(
+				'title'           => $post->post_title,
+				'content'         => $post->post_content,
+				'excerpt'         => $post->post_excerpt,
+				'seo_title'       => $seo['seo_title'],
+				'seo_description' => $seo['seo_description'],
 			);
 
+			$elementor = null;
 			if ( 'update_content' === $p['kind'] ) {
-				if ( '' !== self::page_builder( $target ) ) {
+				$builder = self::page_builder( $target );
+				if ( isset( $c['elementor'] ) ) {
+					if ( 'elementor' !== $builder ) {
+						return self::error( 'peak_page_builder', 'This page is no longer built with Elementor; nothing was changed.' );
+					}
+					// Check every edit before writing anything.
+					$elementor = Peak_SEO_Elementor::apply_edits( Peak_SEO_Elementor::get_data( $target ), $c['elementor'] );
+					if ( is_wp_error( $elementor ) ) {
+						return $elementor;
+					}
+					$snap['elementor_data'] = Peak_SEO_Elementor::get_raw( $target );
+				} elseif ( '' !== $builder ) {
 					return self::error( 'peak_page_builder', 'This page is now controlled by a page builder; content was not changed.' );
 				}
+			}
+
+			self::save_snapshot( $id, $snap );
+
+			if ( null !== $elementor ) {
+				Peak_SEO_Elementor::save( $target, $elementor );
+			}
+
+			if ( 'update_content' === $p['kind'] && ( isset( $c['title'] ) || isset( $c['content'] ) || isset( $c['excerpt'] ) ) ) {
 				$update = array( 'ID' => $target );
 				if ( isset( $c['title'] ) ) {
 					$update['post_title'] = $c['title'];
@@ -339,6 +372,12 @@ class Peak_SEO_Proposals {
 
 		if ( 'create_page' === $p['kind'] ) {
 			wp_update_post( array( 'ID' => (int) $snap['created'], 'post_status' => 'draft' ) );
+		} elseif ( 'update_content' === $p['kind'] && isset( $snap['elementor_data'] ) ) {
+			// Restores the layout and the plain-text copy Elementor keeps in post_content.
+			Peak_SEO_Elementor::save( $p['target_id'], $snap['elementor_data'], $snap['content'] );
+			if ( isset( $p['changes']['title'] ) ) {
+				wp_update_post( wp_slash( array( 'ID' => $p['target_id'], 'post_title' => $snap['title'] ) ) );
+			}
 		} elseif ( 'update_content' === $p['kind'] ) {
 			wp_update_post(
 				wp_slash(
@@ -400,6 +439,12 @@ class Peak_SEO_Proposals {
 			return;
 		}
 		$c = (array) $p['changes'];
+		if ( isset( $c['elementor'] ) ) {
+			$r = Peak_SEO_Elementor::preview( $p['target_id'], $c['elementor'] );
+			if ( is_wp_error( $r ) ) {
+				wp_die( esc_html( 'Peak SEO cannot preview this change: ' . $r->get_error_message() ) );
+			}
+		}
 		if ( isset( $c['content'] ) ) {
 			add_filter(
 				'the_content',
