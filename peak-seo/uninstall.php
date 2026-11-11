@@ -11,6 +11,10 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 
 delete_option( 'peak_seo_site_key' );
 delete_option( 'peak_seo_last_contact' );
+delete_option( 'peak_seo_central_approval' );
+delete_option( 'peak_seo_central_changed' );
+delete_option( 'peak_seo_digest_last' );
+wp_clear_scheduled_hook( 'peak_seo_weekly_digest' );
 
 $peak_ids = get_posts(
 	array(
