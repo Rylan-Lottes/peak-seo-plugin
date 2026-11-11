@@ -54,6 +54,7 @@ class Peak_SEO_Rest {
 			'seo_plugin'     => Peak_SEO_Fields::provider(),
 			'seo_editable'   => Peak_SEO_Fields::supported(),
 			'central_approval' => Peak_SEO_Proposals::central_approval_enabled(),
+			'approved_facts'   => Peak_SEO_Owner_Check::approved_facts(), // Read-only: only the owner can change these.
 			'page_builders'  => array_values(
 				array_filter(
 					array(

@@ -14,6 +14,7 @@ delete_option( 'peak_seo_last_contact' );
 delete_option( 'peak_seo_central_approval' );
 delete_option( 'peak_seo_central_changed' );
 delete_option( 'peak_seo_digest_last' );
+delete_option( 'peak_seo_facts' );
 wp_clear_scheduled_hook( 'peak_seo_weekly_digest' );
 
 $peak_ids = get_posts(
