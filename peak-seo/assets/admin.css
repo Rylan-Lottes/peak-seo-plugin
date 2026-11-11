@@ -24,3 +24,7 @@
 .peak-seo .peak-status-rejected { background: #f6f7f7; color: #50575e; }
 .peak-seo .peak-status-undone { background: #fcf9e8; color: #614200; }
 .peak-seo table.diff { margin: 12px 0; }
+.peak-seo .peak-needs-owner { display: inline-block; margin-left: 6px; background: #fcf0f1; color: #8a2424; border-radius: 4px; padding: 2px 8px; font-weight: 600; }
+.peak-seo .peak-owner-why { background: #fcf9e8; border-left: 4px solid #dba617; padding: 8px 12px; margin: 8px 0; max-width: 760px; }
+.peak-seo .peak-history tr.peak-focus td { background: #f0f6fc; }
+.peak-seo .peak-switch { font-size: 14px; }

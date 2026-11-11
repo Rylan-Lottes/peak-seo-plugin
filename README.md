@@ -1,8 +1,8 @@
 # Peak SEO (WordPress plugin)
 
-Connects a WordPress site to the Peak SEO service. The service reads the site and sends **proposals** (better search titles and descriptions, improved page content, new pages). Nothing changes on the site until someone approves it in the WordPress dashboard, and every approved change can be undone.
+Connects a WordPress site to the Peak SEO service. The service reads the site and sends **proposals** (better search titles and descriptions, improved page content, new pages). Nothing changes on the site until it is approved, either by the owner in the WordPress dashboard or, if the owner allows it, by Peak Visibility. Every approved change can be undone.
 
-Version 0.2.0. An early version, built to test the full loop on a test site.
+Version 0.3.0. An early version, built to test the full loop on a test site.
 
 ## What it does
 
@@ -11,10 +11,20 @@ Version 0.2.0. An early version, built to test the full loop on a test site.
 | **Connect** | On activation the plugin creates a private site key (Peak SEO → Settings). The service signs every request with it (HMAC-SHA256, 5-minute window). A wrong or old signature is rejected. |
 | **Read** | The service can list pages/posts with their SEO fields, page builder and word count, and read one page's full content. |
 | **Propose** | The service can submit three kinds of proposals: `update_seo`, `update_content`, `create_page`. New pages are saved as drafts so they can be previewed. |
-| **Approve** | Peak SEO → Proposed changes shows each proposal with a before/after, a Google-style preview for search titles, a diff for content, and a **Preview** link. Approve or Reject. |
+| **Approve** | Peak SEO → Proposed changes shows each proposal with a before/after, a Google-style preview for search titles, a diff for content, and a **Preview** link. Approve or Reject. If the owner allows it, Peak Visibility can approve too (see [Central approval](#central-approval)). |
 | **Undo** | Before applying a change the plugin saves the old version. **Undo** in the History table puts it back. WordPress revisions are kept too. |
 
-The service **cannot** approve, publish, delete, or touch themes, plugins, settings or users.
+The service **cannot** reject, delete, undo, publish on its own, or touch themes, plugins, settings or users. It can approve a proposal only when the owner has turned on central approval, and never one marked `needs_owner`.
+
+### Central approval
+
+**Peak SEO → Settings → Approvals** has an owner-only switch (needs `manage_options`), off by default: **Let Peak Visibility review and approve changes for me**.
+
+- **Off:** `POST /proposals/{id}/approve` is refused with `403 peak_central_off`. Only logged-in users can approve.
+- **On:** the service can approve pending proposals through the signed API, except ones marked **needs_owner**, which are refused with `403 peak_needs_owner`.
+- A proposal is marked **needs_owner** when the service sends `"needs_owner": true`, or when the new text *adds* something only the owner can vouch for: a price or offer, a phone number, opening hours, a service area (e.g. "Madison, AL", "serving…"), a guarantee or warranty, or a new service ("we now offer…"). Something already in the old text doesn't count. It's a simple word check that errs on the side of asking the owner. Proposals received before 0.3.0 also count as needs_owner.
+- History shows who approved each change (**Peak Visibility** or the user's name).
+- A weekly email to the site's admin email lists the changes Peak Visibility approved, each with a link to History to undo it. It's sent only when there's something to report. **Settings → Send this week's summary now** sends one immediately.
 
 ### SEO plugins
 
@@ -32,7 +42,7 @@ Regular block-editor and classic pages support content edits.
 
 ## Install on a test site
 
-1. Build the zip: `./tools/build-zip.sh` or `python tools/build_zip.py` (creates `dist/peak-seo-0.2.0.zip`). The shell script uses `zip` when installed and falls back to Python, so it works in Git Bash on Windows.
+1. Build the zip: `./tools/build-zip.sh` or `python tools/build_zip.py` (creates `dist/peak-seo-0.3.0.zip`). The shell script uses `zip` when installed and falls back to Python, so it works in Git Bash on Windows.
 2. In WordPress: **Plugins → Add New → Upload Plugin**, choose the zip, **Activate**.
 3. Go to **Peak SEO → Settings** and copy the site key.
 
@@ -52,6 +62,14 @@ python3 tools/peak_client.py propose-seo 12 \
 ```
 
 Then open **Peak SEO → Proposed changes** in the dashboard and approve, reject, preview or undo.
+
+To approve as Peak Visibility instead (turn on central approval in Settings first):
+
+```bash
+python3 tools/peak_client.py approve <proposal id>
+```
+
+Other commands: `page <id>`, `texts <id>` (Elementor widgets), `propose-content`, `propose-elementor`, `propose-page`, `proposals --status pending`, `proposal <id>`. Add `--needs-owner` to any `propose-*` command to make it owner-only.
 
 ## REST API
 
@@ -73,7 +91,8 @@ X-Peak-Signature: hex(HMAC_SHA256(site_key, "<timestamp>\n<METHOD>\n<route>\n<ra
 | GET | `/pages/{id}` | One page, including raw `content`, `rendered` HTML and, on Elementor pages, `elementor_text` |
 | POST | `/proposals` | Submit a proposal (below) |
 | GET | `/proposals?status=pending` | List proposals |
-| GET | `/proposals/{id}` | One proposal with its status and log |
+| GET | `/proposals/{id}` | One proposal with its status, `needs_owner`, `owner_reasons`, `approved_by` and log |
+| POST | `/proposals/{id}/approve` | Approve as Peak Visibility (empty body). Only when central approval is on and the proposal isn't `needs_owner` |
 
 Proposal body:
 
@@ -83,7 +102,8 @@ Proposal body:
   "target_id": 12,
   "changes": { "seo_title": "...", "seo_description": "..." },
   "summary": "One line the owner sees",
-  "reason": "Why this helps"
+  "reason": "Why this helps",
+  "needs_owner": false
 }
 ```
 

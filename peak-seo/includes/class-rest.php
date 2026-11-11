@@ -2,7 +2,9 @@
 /**
  * REST endpoints the Peak SEO service calls. All require a signed request
  * (see Peak_SEO_Auth). The service can READ the site and SUBMIT proposals;
- * it cannot approve, publish, or change anything by itself.
+ * it cannot publish or change anything by itself. It can approve a proposal
+ * only when the site owner has turned that on, and never one marked
+ * needs_owner. It can never reject, delete, undo or change settings.
  *
  * Namespace: /wp-json/peak-seo/v1
  *   GET  /site               site info + which SEO plugin and builders are present
@@ -11,6 +13,7 @@
  *   POST /proposals          submit a proposal
  *   GET  /proposals          list proposals (?status=pending|approved|rejected|undone)
  *   GET  /proposals/{id}     one proposal
+ *   POST /proposals/{id}/approve   approve (only with the owner's permission)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -36,6 +39,7 @@ class Peak_SEO_Rest {
 			)
 		);
 		register_rest_route( self::NS, '/proposals/(?P<id>\d+)', array( 'methods' => 'GET', 'callback' => array( __CLASS__, 'get_proposal' ), 'permission_callback' => $auth ) );
+		register_rest_route( self::NS, '/proposals/(?P<id>\d+)/approve', array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'approve_proposal' ), 'permission_callback' => $auth ) );
 	}
 
 	public static function site() {
@@ -49,6 +53,7 @@ class Peak_SEO_Rest {
 			'theme'          => $theme->get( 'Name' ),
 			'seo_plugin'     => Peak_SEO_Fields::provider(),
 			'seo_editable'   => Peak_SEO_Fields::supported(),
+			'central_approval' => Peak_SEO_Proposals::central_approval_enabled(),
 			'page_builders'  => array_values(
 				array_filter(
 					array(
@@ -136,6 +141,18 @@ class Peak_SEO_Rest {
 	public static function list_proposals( $request ) {
 		$status = sanitize_key( (string) $request->get_param( 'status' ) );
 		return Peak_SEO_Proposals::query( $status );
+	}
+
+	public static function approve_proposal( $request ) {
+		$id = (int) $request['id'];
+		if ( ! Peak_SEO_Proposals::get( $id ) ) {
+			return new WP_Error( 'peak_not_found', 'Proposal not found.', array( 'status' => 404 ) );
+		}
+		$r = Peak_SEO_Proposals::approve( $id, Peak_SEO_Proposals::BY_PEAK );
+		if ( is_wp_error( $r ) ) {
+			return $r;
+		}
+		return Peak_SEO_Proposals::get( $id );
 	}
 
 	public static function get_proposal( $request ) {

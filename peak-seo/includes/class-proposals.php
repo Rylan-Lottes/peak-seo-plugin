@@ -10,6 +10,12 @@
  *   update_content  change a page's title, content and/or excerpt; on Elementor
  *                   pages, change widget text through `elementor` edits instead
  *   create_page     add a new page (saved as a draft until approved)
+ *
+ * Who can approve:
+ *   - a logged-in user with edit_pages, always;
+ *   - the Peak SEO service through the signed API, only when the owner has
+ *     turned on "Let Peak Visibility review and approve changes for me" AND
+ *     the proposal is not marked needs_owner.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -22,6 +28,16 @@ class Peak_SEO_Proposals {
 	const KINDS          = array( 'update_seo', 'update_content', 'create_page' );
 	const TARGET_TYPES   = array( 'page', 'post' );
 	const MAX_CONTENT    = 200000;
+	const OPT_CENTRAL    = 'peak_seo_central_approval';
+	const BY_OWNER       = 'owner';
+	const BY_PEAK        = 'peak';
+
+	/**
+	 * Has the owner allowed Peak Visibility to approve changes?
+	 */
+	public static function central_approval_enabled() {
+		return '1' === get_option( self::OPT_CENTRAL, '0' );
+	}
 
 	public static function register_post_type() {
 		register_post_type(
@@ -171,6 +187,12 @@ class Peak_SEO_Proposals {
 			}
 		}
 
+		// Facts only the owner can vouch for (prices, phone numbers, hours...).
+		$owner_reasons = Peak_SEO_Owner_Check::check_proposal( $kind, $target, $clean );
+		if ( ! empty( $data['needs_owner'] ) ) {
+			array_unshift( $owner_reasons, 'marked by Peak Visibility' );
+		}
+
 		$id = wp_insert_post(
 			array(
 				'post_type'   => self::CPT,
@@ -188,6 +210,8 @@ class Peak_SEO_Proposals {
 		update_post_meta( $id, '_peak_changes', wp_slash( wp_json_encode( $clean ) ) );
 		update_post_meta( $id, '_peak_reason', $reason );
 		update_post_meta( $id, '_peak_status', 'pending' );
+		update_post_meta( $id, '_peak_needs_owner', $owner_reasons ? '1' : '0' );
+		update_post_meta( $id, '_peak_owner_reasons', $owner_reasons );
 
 		// New pages are created as drafts right away so the owner can preview them.
 		if ( 'create_page' === $kind ) {
@@ -239,9 +263,30 @@ class Peak_SEO_Proposals {
 			'changes'    => json_decode( (string) get_post_meta( $p->ID, '_peak_changes', true ), true ),
 			'reason'     => get_post_meta( $p->ID, '_peak_reason', true ),
 			'status'     => get_post_meta( $p->ID, '_peak_status', true ),
+			'needs_owner'   => self::needs_owner( $p->ID ),
+			'owner_reasons' => self::owner_reasons( $p->ID ),
+			'approved_by'   => (string) get_post_meta( $p->ID, '_peak_approved_by', true ), // owner | peak | ''
+			'approved_user' => (int) get_post_meta( $p->ID, '_peak_approved_user', true ),
+			'approved_at'   => (string) get_post_meta( $p->ID, '_peak_approved_at', true ),
 			'created'    => mysql_to_rfc3339( $p->post_date_gmt ),
 			'log'        => self::get_log( $p->ID ),
 		);
+	}
+
+	/**
+	 * Proposals received before 0.3.0 were never checked, so they count as
+	 * needing the owner.
+	 */
+	private static function needs_owner( $id ) {
+		return '0' !== get_post_meta( $id, '_peak_needs_owner', true );
+	}
+
+	private static function owner_reasons( $id ) {
+		$r = get_post_meta( $id, '_peak_owner_reasons', true );
+		if ( is_array( $r ) ) {
+			return array_values( $r );
+		}
+		return self::needs_owner( $id ) ? array( 'received before this check existed' ) : array();
 	}
 
 	public static function query( $status = '' ) {
@@ -264,10 +309,26 @@ class Peak_SEO_Proposals {
 	/* Approve / reject / undo (called from the admin screen only)         */
 	/* ------------------------------------------------------------------ */
 
-	public static function approve( $id ) {
+	/**
+	 * Apply a proposal.
+	 *
+	 * @param int    $id Proposal id.
+	 * @param string $by BY_OWNER (logged-in user, admin screen) or BY_PEAK (signed API).
+	 */
+	public static function approve( $id, $by = self::BY_OWNER ) {
 		$p = self::get( $id );
 		if ( ! $p || 'pending' !== $p['status'] ) {
 			return self::error( 'peak_not_pending', 'This proposal is not waiting for approval.' );
+		}
+		if ( self::BY_PEAK === $by ) {
+			if ( ! self::central_approval_enabled() ) {
+				return new WP_Error( 'peak_central_off', 'The site owner has not allowed Peak Visibility to approve changes.', array( 'status' => 403 ) );
+			}
+			if ( $p['needs_owner'] ) {
+				return new WP_Error( 'peak_needs_owner', 'Only the site owner can approve this change (' . implode( ', ', $p['owner_reasons'] ) . ').', array( 'status' => 403 ) );
+			}
+		} elseif ( self::BY_OWNER !== $by || ! current_user_can( 'edit_pages' ) ) {
+			return new WP_Error( 'peak_forbidden', 'You cannot approve changes.', array( 'status' => 403 ) );
 		}
 		$target = $p['target_id'];
 		$c      = (array) $p['changes'];
@@ -343,7 +404,10 @@ class Peak_SEO_Proposals {
 		}
 
 		update_post_meta( $id, '_peak_status', 'approved' );
-		self::log( $id, 'approved' );
+		update_post_meta( $id, '_peak_approved_by', $by );
+		update_post_meta( $id, '_peak_approved_user', self::BY_OWNER === $by ? get_current_user_id() : 0 );
+		update_post_meta( $id, '_peak_approved_at', gmdate( 'c' ) );
+		self::log( $id, 'approved', $by );
 		return true;
 	}
 
@@ -479,13 +543,17 @@ class Peak_SEO_Proposals {
 		return is_array( $log ) ? $log : array();
 	}
 
-	private static function log( $id, $event ) {
+	private static function log( $id, $event, $by = '' ) {
 		$log   = self::get_log( $id );
-		$log[] = array(
+		$entry = array(
 			'event' => $event,
 			'at'    => gmdate( 'c' ),
 			'user'  => get_current_user_id(),
 		);
+		if ( $by ) {
+			$entry['by'] = $by;
+		}
+		$log[] = $entry;
 		update_post_meta( $id, '_peak_log', $log );
 	}
 

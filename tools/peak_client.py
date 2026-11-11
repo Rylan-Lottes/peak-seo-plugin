@@ -18,6 +18,8 @@ Examples:
   python3 tools/peak_client.py propose-elementor 35 --edit e1264aa "Same-day plumbing in Huntsville, AL"       --summary "Clearer homepage heading"
   python3 tools/peak_client.py propose-page --title "Tankless Water Heaters" --content-file page.html --summary "New service page"
   python3 tools/peak_client.py proposals --status pending
+  python3 tools/peak_client.py approve 44          # only works if the owner turned on central approval
+  Add --needs-owner to any propose-* command to make it owner-only.
 """
 import argparse
 import hashlib
@@ -72,21 +74,26 @@ def main():
     s = sub.add_parser("page"); s.add_argument("id", type=int)
     s = sub.add_parser("proposals"); s.add_argument("--status", default="")
     s = sub.add_parser("proposal"); s.add_argument("id", type=int)
+    s = sub.add_parser("approve", help="Approve as Peak Visibility (needs the owner's permission)"); s.add_argument("id", type=int)
     s = sub.add_parser("propose-seo"); s.add_argument("id", type=int)
     s.add_argument("--title"); s.add_argument("--description")
     s.add_argument("--summary", required=True); s.add_argument("--reason", default="")
+    s.add_argument("--needs-owner", action="store_true", help="Only the site owner may approve this")
     s = sub.add_parser("propose-content"); s.add_argument("id", type=int)
     s.add_argument("--title"); s.add_argument("--content-file"); s.add_argument("--excerpt")
     s.add_argument("--summary", required=True); s.add_argument("--reason", default="")
+    s.add_argument("--needs-owner", action="store_true", help="Only the site owner may approve this")
     s = sub.add_parser("texts"); s.add_argument("id", type=int)
     s = sub.add_parser("propose-elementor"); s.add_argument("id", type=int)
     s.add_argument("--edit", nargs=2, action="append", required=True, metavar=("WIDGET_ID", "TEXT"),
                    help="Elementor widget id and its new text (repeat for several widgets)")
     s.add_argument("--title")
     s.add_argument("--summary", required=True); s.add_argument("--reason", default="")
+    s.add_argument("--needs-owner", action="store_true", help="Only the site owner may approve this")
     s = sub.add_parser("propose-page")
     s.add_argument("--title", required=True); s.add_argument("--content-file", required=True); s.add_argument("--slug")
     s.add_argument("--summary", required=True); s.add_argument("--reason", default="")
+    s.add_argument("--needs-owner", action="store_true", help="Only the site owner may approve this")
     a = p.parse_args()
 
     if not a.site or not a.key:
@@ -110,24 +117,26 @@ def main():
     elif a.cmd == "propose-elementor":
         changes = {"elementor": [{"id": wid, "text": text} for wid, text in a.edit]}
         if a.title: changes["title"] = a.title
-        r = call(a.site, a.key, "POST", "/proposals", {"kind": "update_content", "target_id": a.id, "changes": changes, "summary": a.summary, "reason": a.reason})
+        r = call(a.site, a.key, "POST", "/proposals", {"kind": "update_content", "target_id": a.id, "changes": changes, "summary": a.summary, "reason": a.reason, "needs_owner": a.needs_owner})
     elif a.cmd == "proposals":
         r = call(a.site, a.key, "GET", "/proposals", params={"status": a.status} if a.status else None)
     elif a.cmd == "proposal":
         r = call(a.site, a.key, "GET", f"/proposals/{a.id}")
+    elif a.cmd == "approve":
+        r = call(a.site, a.key, "POST", f"/proposals/{a.id}/approve")
     elif a.cmd == "propose-seo":
         changes = {k: v for k, v in {"seo_title": a.title, "seo_description": a.description}.items() if v is not None}
-        r = call(a.site, a.key, "POST", "/proposals", {"kind": "update_seo", "target_id": a.id, "changes": changes, "summary": a.summary, "reason": a.reason})
+        r = call(a.site, a.key, "POST", "/proposals", {"kind": "update_seo", "target_id": a.id, "changes": changes, "summary": a.summary, "reason": a.reason, "needs_owner": a.needs_owner})
     elif a.cmd == "propose-content":
         changes = {}
         if a.title: changes["title"] = a.title
         if a.content_file: changes["content"] = read_file(a.content_file)
         if a.excerpt: changes["excerpt"] = a.excerpt
-        r = call(a.site, a.key, "POST", "/proposals", {"kind": "update_content", "target_id": a.id, "changes": changes, "summary": a.summary, "reason": a.reason})
+        r = call(a.site, a.key, "POST", "/proposals", {"kind": "update_content", "target_id": a.id, "changes": changes, "summary": a.summary, "reason": a.reason, "needs_owner": a.needs_owner})
     elif a.cmd == "propose-page":
         changes = {"title": a.title, "content": read_file(a.content_file)}
         if a.slug: changes["slug"] = a.slug
-        r = call(a.site, a.key, "POST", "/proposals", {"kind": "create_page", "changes": changes, "summary": a.summary, "reason": a.reason})
+        r = call(a.site, a.key, "POST", "/proposals", {"kind": "create_page", "changes": changes, "summary": a.summary, "reason": a.reason, "needs_owner": a.needs_owner})
 
     status, body = r
     print(f"HTTP {status}")
