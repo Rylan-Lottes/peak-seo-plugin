@@ -1,0 +1,9 @@
+{
+  "site_url": "{{SITE_URL}}",
+  "key_env": "PEAK_KEY",
+  "model": "claude-opus-5-5",
+  "effort": "medium",
+  "thin_word_count": 300,
+  "cooldown_days": 30,
+  "notes_file": "SITE.md"
+}

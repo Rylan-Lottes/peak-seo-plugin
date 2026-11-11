@@ -2,7 +2,7 @@
 
 Connects a WordPress site to the Peak SEO service. The service reads the site and sends **proposals** (better search titles and descriptions, improved page content, new pages). Nothing changes on the site until it is approved, either by the owner in the WordPress dashboard or, if the owner allows it, by Peak Visibility. Every approved change can be undone.
 
-Version 0.3.0. An early version, built to test the full loop on a test site.
+Version 0.4.0. An early version, built to test the full loop on a test site.
 
 ## What it does
 
@@ -22,7 +22,8 @@ The service **cannot** reject, delete, undo, publish on its own, or touch themes
 
 - **Off:** `POST /proposals/{id}/approve` is refused with `403 peak_central_off`. Only logged-in users can approve.
 - **On:** the service can approve pending proposals through the signed API, except ones marked **needs_owner**, which are refused with `403 peak_needs_owner`.
-- A proposal is marked **needs_owner** when the service sends `"needs_owner": true`, or when the new text *adds* something only the owner can vouch for: a price or offer, a phone number, opening hours, a service area (e.g. "Madison, AL", "serving…"), a guarantee or warranty, or a new service ("we now offer…"). Something already in the old text doesn't count. It's a simple word check that errs on the side of asking the owner. Proposals received before 0.3.0 also count as needs_owner.
+- A proposal is marked **needs_owner** when the service sends `"needs_owner": true`, or when the new text *adds* something only the owner can vouch for: a price or offer, a phone number, opening hours, a service area (e.g. "Madison, AL", "serving…"), a guarantee or warranty, or a new service ("we now offer…"). It's a simple word check that errs on the side of asking the owner, and the reason names the fact (e.g. `service area: Decatur`). Proposals received before 0.3.0 also count as needs_owner.
+- **Not** counted as new: anything already in the old text, and service areas, services, phone numbers and hours on the owner's **Approved facts** list (**Peak SEO → Settings → Approved facts**, owner-only). Prices and guarantees always need the owner. The list is read-only to the service (`GET /site` → `approved_facts`). Facts sent by the service can't approve themselves, which keeps the owner in control of what counts as true.
 - History shows who approved each change (**Peak Visibility** or the user's name).
 - A weekly email to the site's admin email lists the changes Peak Visibility approved, each with a link to History to undo it. It's sent only when there's something to report. **Settings → Send this week's summary now** sends one immediately.
 
@@ -40,9 +41,13 @@ Pages built with a page builder store their layout outside the normal page conte
 
 Regular block-editor and classic pages support content edits.
 
+## The Peak SEO brain
+
+[`service/`](service/README.md) holds the Python program that drives the plugin: each run reads the site, picks one improvement, writes it with Claude from the site's notes file, sends it as a proposal and logs it. See [service/README.md](service/README.md).
+
 ## Install on a test site
 
-1. Build the zip: `./tools/build-zip.sh` or `python tools/build_zip.py` (creates `dist/peak-seo-0.3.0.zip`). The shell script uses `zip` when installed and falls back to Python, so it works in Git Bash on Windows.
+1. Build the zip: `./tools/build-zip.sh` or `python tools/build_zip.py` (creates `dist/peak-seo-0.4.0.zip`). The shell script uses `zip` when installed and falls back to Python, so it works in Git Bash on Windows.
 2. In WordPress: **Plugins → Add New → Upload Plugin**, choose the zip, **Activate**.
 3. Go to **Peak SEO → Settings** and copy the site key.
 
@@ -86,7 +91,7 @@ X-Peak-Signature: hex(HMAC_SHA256(site_key, "<timestamp>\n<METHOD>\n<route>\n<ra
 
 | Method | Route | |
 |---|---|---|
-| GET | `/site` | Site name, URL, versions, theme, SEO plugin, page builders |
+| GET | `/site` | Site name, URL, versions, theme, SEO plugin, page builders, `central_approval`, `approved_facts` |
 | GET | `/pages` | Published pages and posts with SEO fields |
 | GET | `/pages/{id}` | One page, including raw `content`, `rendered` HTML and, on Elementor pages, `elementor_text` |
 | POST | `/proposals` | Submit a proposal (below) |

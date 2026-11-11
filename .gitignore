@@ -1,3 +1,7 @@
 dist/
 .DS_Store
 __pycache__/
+service/.venv/
+# Real site folders hold client notes; keep them out of git.
+service/sites/*
+!service/sites/README.md

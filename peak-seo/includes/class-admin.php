@@ -18,6 +18,7 @@ class Peak_SEO_Admin {
 		add_action( 'admin_post_peak_seo_regen_key', array( __CLASS__, 'handle_regen_key' ) );
 		add_action( 'admin_post_peak_seo_central', array( __CLASS__, 'handle_central' ) );
 		add_action( 'admin_post_peak_seo_send_digest', array( __CLASS__, 'handle_send_digest' ) );
+		add_action( 'admin_post_peak_seo_facts', array( __CLASS__, 'handle_facts' ) );
 	}
 
 	public static function menu() {
@@ -104,6 +105,20 @@ class Peak_SEO_Admin {
 		exit;
 	}
 
+	/**
+	 * Owner-only: the approved facts list the needs-owner check trusts.
+	 */
+	public static function handle_facts() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Only the site owner can change this.' );
+		}
+		check_admin_referer( 'peak_seo_facts' );
+		$raw = isset( $_POST['facts'] ) && is_array( $_POST['facts'] ) ? wp_unslash( $_POST['facts'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- cleaned below.
+		update_option( Peak_SEO_Owner_Check::OPT_FACTS, Peak_SEO_Owner_Check::clean_facts( $raw ), false );
+		wp_safe_redirect( add_query_arg( array( 'page' => self::SLUG . '-settings', 'peak_done' => 'facts' ), admin_url( 'admin.php' ) ) . '#peak-facts' );
+		exit;
+	}
+
 	public static function handle_send_digest() {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_die( 'You do not have permission to do this.' );
@@ -148,6 +163,7 @@ class Peak_SEO_Admin {
 			'central_on'  => 'Peak Visibility can now approve changes for you. Changes that mention prices, phone numbers, hours, service areas, guarantees or new services still wait for you.',
 			'central_off' => 'Only you can approve changes now.',
 			'digest'      => 'Summary email sent to ' . get_option( 'admin_email' ) . '.',
+			'facts'       => 'Approved facts saved. New proposals are checked against them.',
 		);
 		if ( isset( $msgs[ $done ] ) ) {
 			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( $msgs[ $done ] ) . '</p></div>';
@@ -226,20 +242,26 @@ class Peak_SEO_Admin {
 		return 'approved' === $p['status'] || 'undone' === $p['status'] ? 'Site owner' : '';
 	}
 
+	/**
+	 * Reasons look like "price" or "service area: Decatur".
+	 */
 	public static function reasons_text( $reasons ) {
 		$words = array(
-			'price'                             => 'it adds a price or offer',
-			'phone number'                      => 'it adds a phone number',
-			'hours'                             => 'it adds opening hours',
-			'service area'                      => 'it mentions a service area',
-			'guarantee'                         => 'it mentions a guarantee or warranty',
-			'new service'                       => 'it mentions a new service',
-			'marked by Peak Visibility'         => 'Peak Visibility asked for your approval',
+			'price'                              => 'it adds a price or offer',
+			'phone number'                       => 'it adds a phone number',
+			'hours'                              => 'it adds opening hours',
+			'service area'                       => 'it mentions a service area that is not on your approved list',
+			'guarantee'                          => 'it mentions a guarantee or warranty',
+			'new service'                        => 'it mentions a service that is not on your approved list',
+			'marked by Peak Visibility'          => 'Peak Visibility asked for your approval',
 			'received before this check existed' => 'it arrived before Peak SEO 0.3.0',
 		);
 		$out = array();
 		foreach ( $reasons as $r ) {
-			$out[] = isset( $words[ $r ] ) ? $words[ $r ] : $r;
+			$parts  = explode( ': ', $r, 2 );
+			$label  = $parts[0];
+			$detail = isset( $parts[1] ) ? ' (' . $parts[1] . ')' : '';
+			$out[]  = ( isset( $words[ $label ] ) ? $words[ $label ] : $label ) . $detail;
 		}
 		return implode( '; ', $out );
 	}
@@ -352,6 +374,25 @@ class Peak_SEO_Admin {
 			echo '<p class="description">' . esc_html( ( $changed['on'] ? 'Turned on' : 'Turned off' ) . ' by ' . ( $who ? $who->display_name : 'an administrator' ) . ' ' . human_time_diff( (int) $changed['at'] ) . ' ago.' ) . '</p>';
 		}
 		echo '<p><button type="submit" class="button button-primary">Save</button></p></form>';
+
+		$facts  = Peak_SEO_Owner_Check::approved_facts();
+		$fields = array(
+			'service_areas' => array( 'Service areas', 'One per line, e.g. Huntsville, AL or Limestone County' ),
+			'services'      => array( 'Services', 'One per line, e.g. Water heater repair' ),
+			'phones'        => array( 'Phone numbers', 'One per line, any format' ),
+			'hours'         => array( 'Hours', 'One per line, e.g. Mon-Fri 7am-6pm or 24/7 emergency service' ),
+		);
+		echo '<h3 id="peak-facts">Approved facts</h3>';
+		echo '<p class="description" style="max-width:640px">Changes that mention a service area, service, phone number or hours on these lists don&rsquo;t need your approval for that reason. Anything new or different still waits for you, and prices and guarantees always do. Only you can edit this list.</p>';
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		wp_nonce_field( 'peak_seo_facts' );
+		echo '<input type="hidden" name="action" value="peak_seo_facts" /><table class="form-table"><tbody>';
+		foreach ( $fields as $key => $f ) {
+			echo '<tr><th><label for="peak-facts-' . esc_attr( $key ) . '">' . esc_html( $f[0] ) . '</label></th><td>';
+			echo '<textarea id="peak-facts-' . esc_attr( $key ) . '" name="facts[' . esc_attr( $key ) . ']" rows="4" class="large-text code">' . esc_textarea( implode( "\n", $facts[ $key ] ) ) . '</textarea>';
+			echo '<p class="description">' . esc_html( $f[1] ) . '</p></td></tr>';
+		}
+		echo '</tbody></table><p><button type="submit" class="button button-primary">Save approved facts</button></p></form>';
 
 		echo '<h3>Weekly summary email</h3>';
 		$next = wp_next_scheduled( Peak_SEO_Digest::HOOK );
