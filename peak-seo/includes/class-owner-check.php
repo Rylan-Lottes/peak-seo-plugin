@@ -253,9 +253,14 @@ class Peak_SEO_Owner_Check {
 		$out  = array();
 		$name = '[A-Z][a-z]+(?:\s[A-Z][a-z]+)*';
 
-		if ( preg_match_all( '/\b(' . $name . '),\s?(?:' . self::US_STATES . ')\b/', $text, $m, PREG_SET_ORDER ) ) {
+		// "Huntsville, AL" and lists like "Huntsville and Madison, AL".
+		if ( preg_match_all( '/\b(' . $name . '(?:\s*(?:,|and|&)\s*' . $name . ')*),\s?(' . self::US_STATES . ')\b/', $text, $m, PREG_SET_ORDER ) ) {
 			foreach ( $m as $hit ) {
-				$out[ self::area_key( $hit[1] ) ] = trim( $hit[0] );
+				foreach ( preg_split( '/\s*(?:,|\band\b|&)\s*/', $hit[1] ) as $place ) {
+					if ( '' !== trim( $place ) && ! in_array( self::area_key( $place ), self::STATE_NAMES, true ) ) {
+						$out[ self::area_key( $place ) ] = trim( $place ) . ', ' . $hit[2];
+					}
+				}
 			}
 		}
 		if ( preg_match_all( '/\b' . $name . ' County\b/', $text, $m ) ) {
@@ -283,6 +288,12 @@ class Peak_SEO_Owner_Check {
 					$out[ 'cue:' . $cue ] = '"' . $cue . '" (no place named)';
 				}
 			}
+		}
+		// "Serving homeowners in Huntsville, AL": the places are checked one by
+		// one, so a bare cue only matters when no place is named at all.
+		$places = array_filter( array_keys( $out ), function ( $k ) { return 0 !== strpos( $k, 'cue:' ); } );
+		if ( $places ) {
+			$out = array_intersect_key( $out, array_flip( $places ) );
 		}
 		return $out;
 	}
