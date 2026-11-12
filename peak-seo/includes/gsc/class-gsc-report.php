@@ -4,10 +4,17 @@
  *
  *   low_ctr      pages with plenty of impressions but a click-through rate well
  *                below what their position usually gets → better title/description
- *   striking     searches at average position 5–20 → strengthen the page that ranks
- *   new_content  searches with impressions where no page ranks better than 20
- *                → maybe a new page or post
+ *   striking     pages to strengthen, one entry per page: the searches it ranks
+ *                5–30 for, plus weaker searches that clearly match its topic
+ *   new_content  searches no page ranks within 30 for AND no existing page
+ *                covers (the search lacks the words in any ranking page's
+ *                address) → maybe a new page or post
  *   movers       biggest position changes vs the previous 28 days
+ *
+ * Quality over quantity: when existing pages are already found for a topic,
+ * the report points at improving them rather than adding more pages. Blog
+ * and archive listings (/blog/, /category/…) don't count as covering a
+ * topic, since a dedicated page usually serves those searches better.
  *
  * Thresholds keep tiny numbers out; they can be changed with the
  * `peak_seo_gsc_thresholds` filter.
@@ -31,11 +38,12 @@ class Peak_SEO_GSC_Report {
 			'low_ctr_min_impressions' => 100,
 			'low_ctr_max_position'    => 15,   // Lower than this, CTR is low anyway.
 			'low_ctr_ratio'           => 0.5,  // Flag when CTR < half the usual for the position.
-			'striking_min_impressions' => 50,
-			'striking_min_position'   => 5,
-			'striking_max_position'   => 20,
-			'new_min_impressions'     => 30,
-			'new_min_position'        => 20,   // Best page ranks worse than this.
+			'search_min_impressions'  => 30,   // A search counts for "strengthen" / "new page" from here.
+			'strengthen_min_position' => 5,    // Better than this is already doing well.
+			'strengthen_max_position' => 30,   // Up to here, improve the page that ranks.
+			'strengthen_min_impressions' => 50, // Per page, all its searches together.
+			'new_min_position'        => 30,   // New page only if nothing ranks better than this
+			                                   // and no existing page matches the topic.
 			'movers_min_impressions'  => 50,   // In both periods.
 			'movers_min_change'       => 3,    // Positions.
 			'limit'                   => 25,   // Items per list.
@@ -112,10 +120,11 @@ class Peak_SEO_GSC_Report {
 		}
 
 		$idx                = self::index( $cur );
+		$split              = self::classify_searches( $cur, $idx, $t );
 		$report['sections'] = array(
 			'low_ctr'     => self::low_ctr( $cur, $idx, $t ),
-			'striking'    => self::striking( $cur, $idx, $t ),
-			'new_content' => self::new_content( $cur, $t ),
+			'striking'    => self::strengthen( $split['pages'], $t ),
+			'new_content' => self::new_content( $split['new'], $t ),
 			'movers'      => self::movers( $cur, $prev, $t ),
 		);
 		return $report;
@@ -150,49 +159,172 @@ class Peak_SEO_GSC_Report {
 		return self::section( 'Better search title or description', 'Pages shown often in Google but clicked much less than usual for their position. A clearer search title and description could win more of those clicks.', $items, $t );
 	}
 
-	private static function striking( $cur, $idx, $t ) {
-		$items = array();
+	/**
+	 * Sort each search (with enough impressions, not already in the top
+	 * positions) into either a page to strengthen or a new-page idea.
+	 *
+	 * @return array { pages: [ url => [ search rows… ] ], new: [ items… ] }
+	 */
+	private static function classify_searches( $cur, $idx, $t ) {
+		$pages = array();
+		$new   = array();
 		foreach ( self::rows( $cur, 'query' ) as $r ) {
-			if ( $r['impressions'] < $t['striking_min_impressions'] || $r['position'] < $t['striking_min_position'] || $r['position'] > $t['striking_max_position'] ) {
+			$q = $r['keys'][0];
+			if ( $r['impressions'] < $t['search_min_impressions'] ) {
 				continue;
 			}
-			$page    = self::best_page_for_query( $idx, $r['keys'][0] );
-			$items[] = array(
-				'query'       => $r['keys'][0],
+			$ranking  = $idx['by_query'][ $q ] ?? array(); // Pages shown for this search, most impressions first.
+			$best     = self::best_ranking( $ranking );
+			$position = $best ? $best['position'] : $r['position'];
+			if ( $position < $t['strengthen_min_position'] ) {
+				continue; // Already at the top.
+			}
+			$search = array(
+				'query'       => $q,
 				'impressions' => $r['impressions'],
 				'clicks'      => $r['clicks'],
-				'position'    => round( $r['position'], 1 ),
-				'page'        => $page,
-			) + ( $page ? self::post_for( $page ) : array() );
-		}
-		usort( $items, function ( $a, $b ) { return $b['impressions'] <=> $a['impressions']; } );
-		return self::section( 'Pages to strengthen', 'Searches where the site sits just below the top results (average position 5–20). Better content, clearer headings, internal links or an FAQ on the ranking page can move it up.', $items, $t );
-	}
+				'position'    => round( $position, 1 ),
+			);
 
-	private static function new_content( $cur, $t ) {
-		$best = array(); // query => [ position, page ]
-		foreach ( self::rows( $cur, 'query_page' ) as $r ) {
-			$q = $r['keys'][0];
-			if ( ! isset( $best[ $q ] ) || $r['position'] < $best[ $q ][0] ) {
-				$best[ $q ] = array( $r['position'], $r['keys'][1] ?? '' );
-			}
-		}
-		$items = array();
-		foreach ( self::rows( $cur, 'query' ) as $r ) {
-			$q        = $r['keys'][0];
-			$position = isset( $best[ $q ] ) ? $best[ $q ][0] : $r['position'];
-			if ( $r['impressions'] < $t['new_min_impressions'] || $position <= $t['new_min_position'] ) {
+			// Close enough: improve the page that already ranks (unless it's a blog/archive listing).
+			if ( $best && $position <= $t['strengthen_max_position'] && ! self::is_listing( $best['keys'][1] ?? '' ) ) {
+				$pages[ $best['keys'][1] ][] = $search + array( 'why' => 'close' );
 				continue;
 			}
-			$items[] = array(
-				'query'         => $q,
-				'impressions'   => $r['impressions'],
+			// Further away, but an existing page is clearly about this search: improve that page.
+			$match = self::topic_page( $q, $ranking );
+			if ( $match ) {
+				$pages[ $match ][] = $search + array( 'why' => 'topic' );
+				continue;
+			}
+			if ( ! $best && $position <= $t['new_min_position'] ) {
+				continue; // Ranks reasonably, but Google didn't say which page (privacy-filtered): leave it.
+			}
+			// Left: nothing within range, or only a blog/archive listing, and no page on the topic.
+			$new[] = $search + array(
 				'best_position' => round( $position, 1 ),
-				'best_page'     => isset( $best[ $q ] ) ? $best[ $q ][1] : '',
+				'best_page'     => $best ? ( $best['keys'][1] ?? '' ) : '',
 			);
 		}
+		return array(
+			'pages' => $pages,
+			'new'   => $new,
+		);
+	}
+
+	private static function strengthen( $pages, $t ) {
+		$items = array();
+		foreach ( $pages as $url => $searches ) {
+			$impressions = array_sum( array_column( $searches, 'impressions' ) );
+			if ( $impressions < $t['strengthen_min_impressions'] ) {
+				continue;
+			}
+			usort( $searches, function ( $a, $b ) { return $b['impressions'] <=> $a['impressions']; } );
+			$weighted = 0;
+			foreach ( $searches as $s ) {
+				$weighted += $s['position'] * $s['impressions'];
+			}
+			$items[] = array(
+				'page'          => $url,
+				'impressions'   => $impressions,
+				'clicks'        => array_sum( array_column( $searches, 'clicks' ) ),
+				'position'      => round( $weighted / max( 1, $impressions ), 1 ), // Impression-weighted.
+				'best_position' => min( array_column( $searches, 'position' ) ),
+				'search_count'  => count( $searches ),
+				'searches'      => array_slice( $searches, 0, 10 ),
+			) + self::post_for( $url );
+		}
 		usort( $items, function ( $a, $b ) { return $b['impressions'] <=> $a['impressions']; } );
-		return self::section( 'Possible new pages', 'Searches that show the site but where no page ranks better than position ' . (int) $t['new_min_position'] . '. A page written for the search could rank much better.', $items, $t );
+		return self::section( 'Pages to strengthen', 'One job per page: the searches it already ranks 5–' . (int) $t['strengthen_max_position'] . ' for, plus weaker searches that clearly match its topic. Improving that one page (fuller content, clear headings for these searches, internal links, an FAQ) is usually worth more than adding new pages.', $items, $t );
+	}
+
+	private static function new_content( $new, $t ) {
+		usort( $new, function ( $a, $b ) { return $b['impressions'] <=> $a['impressions']; } );
+		$items = array_map(
+			function ( $s ) {
+				unset( $s['why'] );
+				return $s;
+			},
+			$new
+		);
+		return self::section( 'Possible new pages', 'Searches where no page ranks within ' . (int) $t['new_min_position'] . ' and no existing page covers the topic (only a blog or archive listing shows up, if anything). Worth a new page only if it’s a service or topic the business really offers.', $items, $t );
+	}
+
+	/**
+	 * The query+page row with the best (lowest) position.
+	 */
+	private static function best_ranking( $rows ) {
+		$best = null;
+		foreach ( $rows as $r ) {
+			if ( ! $best || $r['position'] < $best['position'] ) {
+				$best = $r;
+			}
+		}
+		return $best;
+	}
+
+	/**
+	 * A ranking page whose address words all appear in the search
+	 * ("/web-design" covers "web design alabama" and "website design near me").
+	 */
+	private static function topic_page( $query, $ranking ) {
+		$words = self::words( $query );
+		foreach ( $ranking as $r ) {
+			$url = $r['keys'][1] ?? '';
+			if ( '' === $url || self::is_listing( $url ) ) {
+				continue;
+			}
+			$need = self::words( (string) wp_parse_url( $url, PHP_URL_PATH ), true );
+			if ( ! $need ) {
+				continue; // The home page matches everything, so it covers nothing in particular.
+			}
+			$all = true;
+			foreach ( $need as $w ) {
+				$found = false;
+				foreach ( $words as $have ) {
+					if ( 0 === strpos( $have, $w ) ) { // "web" matches "website".
+						$found = true;
+						break;
+					}
+				}
+				if ( ! $found ) {
+					$all = false;
+					break;
+				}
+			}
+			if ( $all ) {
+				return $url;
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * Blog index, categories, tags, authors, pagination, search results.
+	 */
+	public static function is_listing( $url ) {
+		$path = '/' . ltrim( (string) wp_parse_url( $url, PHP_URL_PATH ), '/' );
+		return (bool) preg_match( '#^/(blog|news|articles|posts)/?$#i', $path ) // The index itself, not /blog/some-post/.
+			|| (bool) preg_match( '#^/(category|tag|author|search)(/|$)#i', $path )
+			|| (bool) preg_match( '#/page/\d+/?$#', $path );
+	}
+
+	/**
+	 * Main words, lowercased and singular. For URLs, also drops filler words.
+	 */
+	private static function words( $text, $is_url = false ) {
+		$stop = array( 'a', 'an', 'and', 'the', 'of', 'for', 'in', 'on', 'to', 'with', 'is', 'are', 'what', 'how', 'why', 'your', 'our', 'me', 'my', 'near' );
+		if ( $is_url ) {
+			$stop = array_merge( $stop, array( 'blog', 'post', 'page', 'category', 'tag', 'www', 'html', 'php', 'index', 'amp' ) );
+		}
+		$out = array();
+		foreach ( preg_split( '/[^a-z0-9]+/', strtolower( $text ) ) as $w ) {
+			if ( '' === $w || ctype_digit( $w ) || in_array( $w, $stop, true ) ) {
+				continue;
+			}
+			$out[] = strlen( $w ) > 3 ? preg_replace( '/s$/', '', $w ) : $w;
+		}
+		return array_values( array_unique( $out ) );
 	}
 
 	private static function movers( $cur, $prev, $t ) {
@@ -287,10 +419,6 @@ class Peak_SEO_GSC_Report {
 		}
 		unset( $groups );
 		return $idx;
-	}
-
-	private static function best_page_for_query( $idx, $query ) {
-		return isset( $idx['by_query'][ $query ][0] ) ? ( $idx['by_query'][ $query ][0]['keys'][1] ?? '' ) : '';
 	}
 
 	private static function top_queries_for_page( $idx, $page, $n ) {
