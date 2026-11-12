@@ -28,3 +28,9 @@
 .peak-seo .peak-owner-why { background: #fcf9e8; border-left: 4px solid #dba617; padding: 8px 12px; margin: 8px 0; max-width: 760px; }
 .peak-seo .peak-history tr.peak-focus td { background: #f0f6fc; }
 .peak-seo .peak-switch { font-size: 14px; }
+.peak-seo .peak-gsc-status { border-left: 4px solid #dcdcde; background: #fff; padding: 10px 14px; margin: 12px 0; max-width: 760px; }
+.peak-seo .peak-gsc-status p { margin: 6px 0 0; }
+.peak-seo .peak-gsc-ok { border-left-color: #00a32a; }
+.peak-seo .peak-gsc-fail { border-left-color: #d63638; }
+.peak-seo .peak-gsc-help { max-width: 760px; margin: 12px 0 20px; }
+.peak-seo .peak-gsc-help summary { cursor: pointer; font-weight: 600; }

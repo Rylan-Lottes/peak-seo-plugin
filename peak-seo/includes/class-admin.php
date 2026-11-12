@@ -19,6 +19,9 @@ class Peak_SEO_Admin {
 		add_action( 'admin_post_peak_seo_central', array( __CLASS__, 'handle_central' ) );
 		add_action( 'admin_post_peak_seo_send_digest', array( __CLASS__, 'handle_send_digest' ) );
 		add_action( 'admin_post_peak_seo_facts', array( __CLASS__, 'handle_facts' ) );
+		add_action( 'admin_post_peak_seo_gsc_save', array( __CLASS__, 'handle_gsc_save' ) );
+		add_action( 'admin_post_peak_seo_gsc_test', array( __CLASS__, 'handle_gsc_test' ) );
+		add_action( 'admin_post_peak_seo_gsc_remove', array( __CLASS__, 'handle_gsc_remove' ) );
 	}
 
 	public static function menu() {
@@ -164,6 +167,8 @@ class Peak_SEO_Admin {
 			'central_off' => 'Only you can approve changes now.',
 			'digest'      => 'Summary email sent to ' . get_option( 'admin_email' ) . '.',
 			'facts'       => 'Approved facts saved. New proposals are checked against them.',
+			'gsc_saved'   => 'Search Console settings saved. Click Test connection to check them.',
+			'gsc_removed' => 'Search Console key removed. Peak SEO no longer contacts Google.',
 		);
 		if ( isset( $msgs[ $done ] ) ) {
 			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( $msgs[ $done ] ) . '</p></div>';
@@ -402,11 +407,132 @@ class Peak_SEO_Admin {
 		echo '<input type="hidden" name="action" value="peak_seo_send_digest" />';
 		echo '<button type="submit" class="button">Send this week&rsquo;s summary now</button></form>';
 
+		self::render_gsc_settings();
+
 		echo '<h2>Disconnect or reset</h2><p>Creating a new key immediately disconnects anything using the old one.</p>';
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 		wp_nonce_field( 'peak_seo_regen_key' );
 		echo '<input type="hidden" name="action" value="peak_seo_regen_key" />';
 		echo '<button type="submit" class="button" onclick="return confirm(\'Create a new key? The current connection will stop working.\');">Create new key</button></form>';
 		echo '</div>';
+	}
+
+	/* ------------------------------------------------------------------ */
+	/* Google Search Console settings                                      */
+	/* ------------------------------------------------------------------ */
+
+	private static function gsc_form_open( $action ) {
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="peak-inline">';
+		wp_nonce_field( $action );
+		echo '<input type="hidden" name="action" value="' . esc_attr( $action ) . '" />';
+	}
+
+	private static function gsc_redirect( $args ) {
+		wp_safe_redirect( add_query_arg( array_merge( array( 'page' => self::SLUG . '-settings' ), $args ), admin_url( 'admin.php' ) ) . '#peak-gsc' );
+		exit;
+	}
+
+	public static function handle_gsc_save() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Only the site owner can change this.' );
+		}
+		check_admin_referer( 'peak_seo_gsc_save' );
+		$property = isset( $_POST['gsc_property'] ) ? sanitize_text_field( wp_unslash( $_POST['gsc_property'] ) ) : '';
+		// The key is JSON with a PEM private key inside: validated by parse_key(), never echoed back.
+		$key_json = isset( $_POST['gsc_key'] ) ? (string) wp_unslash( $_POST['gsc_key'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$r        = Peak_SEO_GSC::save( $property, $key_json );
+		if ( is_wp_error( $r ) ) {
+			self::gsc_redirect( array( 'peak_gsc_error' => rawurlencode( $r->get_error_message() ) ) );
+		}
+		self::gsc_redirect( array( 'peak_done' => 'gsc_saved' ) );
+	}
+
+	public static function handle_gsc_test() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Only the site owner can do this.' );
+		}
+		check_admin_referer( 'peak_seo_gsc_test' );
+		Peak_SEO_GSC::test_connection(); // Result is stored and shown in the section.
+		self::gsc_redirect( array() );
+	}
+
+	public static function handle_gsc_remove() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Only the site owner can change this.' );
+		}
+		check_admin_referer( 'peak_seo_gsc_remove' );
+		Peak_SEO_GSC::remove_key();
+		self::gsc_redirect( array( 'peak_done' => 'gsc_removed' ) );
+	}
+
+	private static function render_gsc_settings() {
+		$id       = Peak_SEO_GSC::identity();
+		$has_key  = Peak_SEO_GSC::has_key();
+		$property = Peak_SEO_GSC::property();
+		$status   = Peak_SEO_GSC::status();
+
+		echo '<h2 id="peak-gsc">Google Search Console</h2>';
+		echo '<p class="description" style="max-width:640px">Lets Peak SEO read how this site performs in Google Search (read-only). Nothing is sent to Google until a key and a property are saved.</p>';
+		if ( ! empty( $_GET['peak_gsc_error'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display only.
+			echo '<div class="notice notice-error inline"><p>' . esc_html( rawurldecode( sanitize_text_field( wp_unslash( $_GET['peak_gsc_error'] ) ) ) ) . '</p></div>'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		}
+		if ( ! Peak_SEO_Crypto::available() ) {
+			echo '<div class="notice notice-error inline"><p>This server’s PHP can’t encrypt secrets (the sodium extension is missing), so a key can’t be saved. Ask your host to enable PHP sodium.</p></div>';
+		}
+
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		wp_nonce_field( 'peak_seo_gsc_save' );
+		echo '<input type="hidden" name="action" value="peak_seo_gsc_save" /><table class="form-table"><tbody>';
+		echo '<tr><th>Service account</th><td>';
+		if ( $has_key ) {
+			echo '<code>' . esc_html( $id['email'] ?? '(unknown)' ) . '</code>';
+			if ( ! empty( $id['project_id'] ) ) {
+				echo ' <span class="description">Google Cloud project: ' . esc_html( $id['project_id'] ) . '</span>';
+			}
+			echo '<p class="description">The key is stored encrypted and is never shown again. Paste a new key below only to replace it.</p>';
+		} else {
+			echo 'Not connected yet.';
+		}
+		echo '</td></tr>';
+		echo '<tr><th><label for="peak-gsc-key">' . ( $has_key ? 'Replace key' : 'Service account key (JSON)' ) . '</label></th><td>';
+		echo '<textarea id="peak-gsc-key" name="gsc_key" rows="5" class="large-text code" autocomplete="off" spellcheck="false" placeholder="{ &quot;type&quot;: &quot;service_account&quot;, &quot;project_id&quot;: &quot;…&quot;, &quot;private_key&quot;: &quot;…&quot;, &quot;client_email&quot;: &quot;…&quot; }"></textarea>';
+		echo '<p class="description">Open the .json key file from Google Cloud in a text editor and paste all of it.</p></td></tr>';
+		echo '<tr><th><label for="peak-gsc-property">Search Console property</label></th><td>';
+		echo '<input type="text" id="peak-gsc-property" name="gsc_property" class="regular-text code" value="' . esc_attr( $property ) . '" placeholder="sc-domain:example.com" />';
+		echo '<p class="description">Exactly as Search Console shows it: <code>sc-domain:example.com</code> for a Domain property, or <code>https://www.example.com/</code> for a URL-prefix property.</p></td></tr>';
+		echo '</tbody></table><p><button type="submit" class="button button-primary">Save</button></p></form>';
+
+		if ( Peak_SEO_GSC::configured() ) {
+			echo '<div class="peak-actions">';
+			self::gsc_form_open( 'peak_seo_gsc_test' );
+			echo '<button type="submit" class="button">Test connection</button></form>';
+			self::gsc_form_open( 'peak_seo_gsc_remove' );
+			echo '<button type="submit" class="button" onclick="return confirm(\'Remove the Search Console key from this site?\');">Remove key</button></form>';
+			echo '</div>';
+		} elseif ( $has_key ) {
+			echo '<div class="peak-actions">';
+			self::gsc_form_open( 'peak_seo_gsc_remove' );
+			echo '<button type="submit" class="button" onclick="return confirm(\'Remove the Search Console key from this site?\');">Remove key</button></form></div>';
+		}
+
+		if ( $status ) {
+			$class = $status['ok'] ? 'peak-gsc-ok' : 'peak-gsc-fail';
+			echo '<div class="peak-gsc-status ' . esc_attr( $class ) . '"><strong>' . ( $status['ok'] ? 'Connected' : 'Not working yet' ) . '</strong> <span class="description">(tested ' . esc_html( human_time_diff( (int) $status['at'] ) ) . ' ago)</span><p>' . esc_html( $status['message'] ) . '</p>';
+			if ( ! empty( $status['suggestions'] ) ) {
+				echo '<p>Properties this key can read:</p><ul>';
+				foreach ( $status['suggestions'] as $s ) {
+					echo '<li><code>' . esc_html( $s ) . '</code></li>';
+				}
+				echo '</ul>';
+			}
+			echo '</div>';
+		}
+
+		echo '<details class="peak-gsc-help"><summary>How to set this up in Google</summary><ol>';
+		echo '<li>In <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a>, pick or create a project, then enable the <a href="https://console.cloud.google.com/apis/library/searchconsole.googleapis.com" target="_blank" rel="noopener">Google Search Console API</a>.</li>';
+		echo '<li>Go to IAM &amp; Admin → Service accounts → Create service account (no roles needed). Open it → Keys → Add key → Create new key → JSON. A .json file downloads.</li>';
+		echo '<li>In <a href="https://search.google.com/search-console" target="_blank" rel="noopener">Search Console</a>, open the property → Settings → Users and permissions → Add user. Enter the service account’s email (it ends in .iam.gserviceaccount.com) and choose Restricted.</li>';
+		echo '<li>Paste the .json file’s contents and the property above, click Save, then Test connection.</li>';
+		echo '</ol></details>';
 	}
 }

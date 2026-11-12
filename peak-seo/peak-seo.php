@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Peak SEO
  * Description:       Connects this site to the Peak SEO service. Suggested SEO improvements arrive as proposals that you preview, approve or reject. Nothing changes on your site until you approve it, and every change can be undone.
- * Version:           0.4.0
+ * Version:           0.5.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Peak Visibility
@@ -15,12 +15,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'PEAK_SEO_VERSION', '0.4.0' );
+define( 'PEAK_SEO_VERSION', '0.5.0' );
 define( 'PEAK_SEO_FILE', __FILE__ );
 define( 'PEAK_SEO_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PEAK_SEO_URL', plugin_dir_url( __FILE__ ) );
 
 require_once PEAK_SEO_DIR . 'includes/class-auth.php';
+require_once PEAK_SEO_DIR . 'includes/class-crypto.php';
+require_once PEAK_SEO_DIR . 'includes/gsc/interface-gsc-credentials.php';
+require_once PEAK_SEO_DIR . 'includes/gsc/class-gsc-service-account.php';
+require_once PEAK_SEO_DIR . 'includes/gsc/class-gsc-client.php';
+require_once PEAK_SEO_DIR . 'includes/gsc/class-gsc.php';
 require_once PEAK_SEO_DIR . 'includes/class-seo-fields.php';
 require_once PEAK_SEO_DIR . 'includes/class-elementor.php';
 require_once PEAK_SEO_DIR . 'includes/class-owner-check.php';

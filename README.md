@@ -2,7 +2,7 @@
 
 Connects a WordPress site to the Peak SEO service. The service reads the site and sends **proposals** (better search titles and descriptions, improved page content, new pages). Nothing changes on the site until it is approved, either by the owner in the WordPress dashboard or, if the owner allows it, by Peak Visibility. Every approved change can be undone.
 
-Version 0.4.0. An early version, built to test the full loop on a test site.
+Version 0.5.0. An early version, built to test the full loop on a test site.
 
 ## What it does
 
@@ -27,6 +27,16 @@ The service **cannot** reject, delete, undo, publish on its own, or touch themes
 - History shows who approved each change (**Peak Visibility** or the user's name).
 - A weekly email to the site's admin email lists the changes Peak Visibility approved, each with a link to History to undo it. It's sent only when there's something to report. **Settings → Send this week's summary now** sends one immediately.
 
+### Google Search Console
+
+**Peak SEO → Settings → Google Search Console** (owner-only) connects the site to Search Console, read-only.
+
+- Paste a **service account JSON key** and the **property** (`sc-domain:example.com` or `https://www.example.com/`). The key is encrypted with libsodium (`sodium_crypto_secretbox`) using a key derived from the site's WordPress salts, and is never shown again. Settings shows only the service account email. If the salts change, the plugin asks for the key again.
+- **Test connection** signs in (an RS256 JWT exchanged at `oauth2.googleapis.com/token` for a `webmasters.readonly` token, cached until it expires), checks the property and the account's permission, and reads one small report. It explains the common problems: the API isn't enabled, the account isn't a user on the property, a wrong property format, a deleted key, or a wrong server clock. When the property is wrong, it lists the properties the key can read.
+- Nothing contacts Google until a key and a property are saved. Sign-in goes through the `Peak_SEO_GSC_Credentials` interface, so a "Sign in with Google" (OAuth) option can be added later without touching the rest.
+
+Setup in Google: enable the **Google Search Console API** in a Google Cloud project, create a **service account** and a **JSON key**, then in Search Console add the service account email as a user (**Restricted** is enough) under **Settings → Users and permissions**.
+
 ### SEO plugins
 
 Search titles and descriptions are written into whichever SEO plugin the site uses: **Yoast**, **Rank Math** or **SEOPress**. With no SEO plugin, Peak SEO stores and prints its own. **All in One SEO** is detected but not editable yet (it uses its own database table).
@@ -47,7 +57,7 @@ Regular block-editor and classic pages support content edits.
 
 ## Install on a test site
 
-1. Build the zip: `./tools/build-zip.sh` or `python tools/build_zip.py` (creates `dist/peak-seo-0.4.0.zip`). The shell script uses `zip` when installed and falls back to Python, so it works in Git Bash on Windows.
+1. Build the zip: `./tools/build-zip.sh` or `python tools/build_zip.py` (creates `dist/peak-seo-0.5.0.zip`). The shell script uses `zip` when installed and falls back to Python, so it works in Git Bash on Windows.
 2. In WordPress: **Plugins → Add New → Upload Plugin**, choose the zip, **Activate**.
 3. Go to **Peak SEO → Settings** and copy the site key.
 
