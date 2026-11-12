@@ -21,6 +21,14 @@ foreach ( array( 'peak_seo_gsc_auth', 'peak_seo_gsc_key', 'peak_seo_gsc_identity
 	delete_option( $peak_opt );
 }
 delete_transient( 'peak_seo_gsc_token' );
+delete_transient( 'peak_seo_gsc_pull_lock' );
+wp_clear_scheduled_hook( 'peak_seo_gsc_weekly_pull' );
+
+// Search Console snapshot tables.
+global $wpdb;
+$wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}peak_seo_gsc_data" );  // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+$wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}peak_seo_gsc_pulls" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+delete_option( 'peak_seo_db_version' );
 wp_clear_scheduled_hook( 'peak_seo_weekly_digest' );
 
 $peak_ids = get_posts(
