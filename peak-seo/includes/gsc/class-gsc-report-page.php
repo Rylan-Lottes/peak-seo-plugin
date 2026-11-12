@@ -98,11 +98,12 @@ class Peak_SEO_GSC_Report_Page {
 	private static function totals( $t ) {
 		$c     = $t['current'];
 		$p     = $t['previous'];
+		$had   = $p['impressions'] > 0; // Was there any data in the previous 28 days?
 		$tiles = array(
-			array( 'Clicks', number_format_i18n( $c['clicks'] ), self::change( $c['clicks'], $p['clicks'], false ) ),
-			array( 'Impressions', number_format_i18n( $c['impressions'] ), self::change( $c['impressions'], $p['impressions'], false ) ),
-			array( 'Click-through rate', self::pct( $c['ctr'] ), self::change( $c['ctr'], $p['ctr'], false, true ) ),
-			array( 'Average position', (string) $c['position'], self::change( $c['position'], $p['position'], true ) ),
+			array( 'Clicks', number_format_i18n( $c['clicks'] ), self::change( $c['clicks'], $p['clicks'], false, $had ) ),
+			array( 'Impressions', number_format_i18n( $c['impressions'] ), self::change( $c['impressions'], $p['impressions'], false, $had ) ),
+			array( 'Click-through rate', self::pct( $c['ctr'] ), self::change( $c['ctr'], $p['ctr'], false, $had, true ) ),
+			array( 'Average position', (string) $c['position'], self::change( $c['position'], $p['position'], true, $had ) ),
 		);
 		echo '<div class="peak-tiles">';
 		foreach ( $tiles as $tile ) {
@@ -114,9 +115,16 @@ class Peak_SEO_GSC_Report_Page {
 	/**
 	 * "▲ 12% vs previous". For position, lower is better.
 	 */
-	private static function change( $now, $before, $lower_is_better, $is_rate = false ) {
-		if ( ! $before ) {
+	private static function change( $now, $before, $lower_is_better, $had_data, $is_rate = false ) {
+		if ( ! $had_data ) {
 			return '<span class="description">no earlier data</span>';
+		}
+		if ( ! $before ) {
+			if ( ! $now ) {
+				return '<span class="description">same as previous</span>';
+			}
+			$from = $is_rate ? self::pct( 0 ) : '0';
+			return '<span class="peak-move-up">' . esc_html( '▲ up from ' . $from ) . '</span>';
 		}
 		if ( $lower_is_better ) {
 			$diff = round( $before - $now, 1 );
@@ -160,8 +168,15 @@ class Peak_SEO_GSC_Report_Page {
 		return $out;
 	}
 
+	/**
+	 * 12.3%, 0.45%, 0.02%: more decimals for small rates so they don't show as 0%.
+	 */
 	private static function pct( $ctr ) {
-		return round( $ctr * 100, 1 ) . '%';
+		$p = $ctr * 100;
+		if ( 0.0 === (float) $p ) {
+			return '0%';
+		}
+		return ( $p >= 1 ? round( $p, 1 ) : ( $p >= 0.1 ? round( $p, 2 ) : max( 0.01, round( $p, 2 ) ) ) ) . '%';
 	}
 
 	private static function range( $r, $fmt ) {
