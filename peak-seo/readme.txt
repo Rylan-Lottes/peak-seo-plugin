@@ -4,7 +4,7 @@ Tags: seo, local seo, search
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 0.6.0
+Stable tag: 0.7.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -23,6 +23,10 @@ Peak SEO is the connector for the Peak SEO service by Peak Visibility. The servi
 This plugin connects to an external service (Peak SEO). It sends no data until you connect it with your site key, and only the Peak SEO service can request your pages.
 
 == Changelog ==
+
+= 0.7.0 =
+* New Search Console page: what to work on next (low click-through pages, searches close to page one, searches with no good page, biggest position changes).
+* The same report as JSON at /wp-json/peak-seo/v1/gsc-report for administrators or signed requests.
 
 = 0.6.0 =
 * Weekly Search Console data pull (and a Pull now button): last 28 days and the 28 before, as totals, top queries, top pages and query+page pairs.

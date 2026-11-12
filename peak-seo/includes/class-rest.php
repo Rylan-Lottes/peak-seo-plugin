@@ -14,6 +14,7 @@
  *   GET  /proposals          list proposals (?status=pending|approved|rejected|undone)
  *   GET  /proposals/{id}     one proposal
  *   POST /proposals/{id}/approve   approve (only with the owner's permission)
+ *   GET  /gsc-report         Search Console "what to work on" report (admin or signed)
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -28,6 +29,7 @@ class Peak_SEO_Rest {
 		$auth = array( 'Peak_SEO_Auth', 'check' );
 
 		register_rest_route( self::NS, '/site', array( 'methods' => 'GET', 'callback' => array( __CLASS__, 'site' ), 'permission_callback' => $auth ) );
+		register_rest_route( self::NS, '/gsc-report', array( 'methods' => 'GET', 'callback' => array( __CLASS__, 'gsc_report' ), 'permission_callback' => array( __CLASS__, 'admin_or_signed' ) ) );
 		register_rest_route( self::NS, '/pages', array( 'methods' => 'GET', 'callback' => array( __CLASS__, 'pages' ), 'permission_callback' => $auth ) );
 		register_rest_route( self::NS, '/pages/(?P<id>\d+)', array( 'methods' => 'GET', 'callback' => array( __CLASS__, 'page' ), 'permission_callback' => $auth ) );
 		register_rest_route(
@@ -40,6 +42,28 @@ class Peak_SEO_Rest {
 		);
 		register_rest_route( self::NS, '/proposals/(?P<id>\d+)', array( 'methods' => 'GET', 'callback' => array( __CLASS__, 'get_proposal' ), 'permission_callback' => $auth ) );
 		register_rest_route( self::NS, '/proposals/(?P<id>\d+)/approve', array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'approve_proposal' ), 'permission_callback' => $auth ) );
+	}
+
+	/**
+	 * A logged-in administrator (e.g. an Application Password with
+	 * manage_options) or a request signed with the Peak SEO site key.
+	 */
+	public static function admin_or_signed( $request ) {
+		if ( current_user_can( 'manage_options' ) ) {
+			return true;
+		}
+		if ( $request->get_header( 'x_peak_signature' ) ) {
+			return Peak_SEO_Auth::check( $request );
+		}
+		return new WP_Error(
+			'rest_forbidden',
+			is_user_logged_in() ? 'Only administrators can read the Search Console report.' : 'Sign in as an administrator (for example with an Application Password) or send a signed Peak SEO request.',
+			array( 'status' => is_user_logged_in() ? 403 : 401 )
+		);
+	}
+
+	public static function gsc_report() {
+		return rest_ensure_response( Peak_SEO_GSC_Report::build() );
 	}
 
 	public static function site() {

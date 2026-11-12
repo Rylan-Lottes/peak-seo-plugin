@@ -29,6 +29,9 @@ global $wpdb;
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}peak_seo_gsc_data" );  // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}peak_seo_gsc_pulls" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 delete_option( 'peak_seo_db_version' );
+
+// Cached Search Console reports (transients).
+$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_peak\_seo\_gsc\_report\_%' OR option_name LIKE '\_transient\_timeout\_peak\_seo\_gsc\_report\_%'" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 wp_clear_scheduled_hook( 'peak_seo_weekly_digest' );
 
 $peak_ids = get_posts(
