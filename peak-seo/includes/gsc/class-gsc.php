@@ -238,12 +238,14 @@ class Peak_SEO_GSC {
 
 		$status['ok']      = true;
 		$status['message'] = sprintf(
-			'Connected. %s can read %s (%s access). Last 28 days: %s clicks, %s impressions.',
+			'Connected. %s can read %s (%s access). Last 28 days: %s %s, %s %s.',
 			self::credentials()->label(),
 			$property,
 			$status['permission'],
 			number_format_i18n( $clicks ),
-			number_format_i18n( $impressions )
+			1 === $clicks ? 'click' : 'clicks',
+			number_format_i18n( $impressions ),
+			1 === $impressions ? 'impression' : 'impressions'
 		);
 		if ( 0 === $impressions ) {
 			$status['message'] .= ' No search data yet; that’s normal for a new or very small site.';
