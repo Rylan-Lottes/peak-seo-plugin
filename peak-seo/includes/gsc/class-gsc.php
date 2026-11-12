@@ -121,10 +121,12 @@ class Peak_SEO_GSC {
 			delete_option( self::OPT_STATUS ); // Old test result no longer applies.
 		}
 		update_option( self::OPT_PROPERTY, $prop, false );
+		Peak_SEO_GSC_Pull::schedule();
 		return true;
 	}
 
 	public static function remove_key() {
+		Peak_SEO_GSC_Pull::unschedule(); // Stored snapshots stay; no more requests to Google.
 		delete_transient( Peak_SEO_GSC_Service_Account::TOKEN_TRANSIENT );
 		foreach ( array( self::OPT_AUTH, self::OPT_KEY, self::OPT_IDENTITY, self::OPT_STATUS ) as $opt ) {
 			delete_option( $opt );

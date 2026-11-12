@@ -2,7 +2,7 @@
 
 Connects a WordPress site to the Peak SEO service. The service reads the site and sends **proposals** (better search titles and descriptions, improved page content, new pages). Nothing changes on the site until it is approved, either by the owner in the WordPress dashboard or, if the owner allows it, by Peak Visibility. Every approved change can be undone.
 
-Version 0.5.0. An early version, built to test the full loop on a test site.
+Version 0.6.0. An early version, built to test the full loop on a test site.
 
 ## What it does
 
@@ -35,6 +35,8 @@ The service **cannot** reject, delete, undo, publish on its own, or touch themes
 - **Test connection** signs in (an RS256 JWT exchanged at `oauth2.googleapis.com/token` for a `webmasters.readonly` token, cached until it expires), checks the property and the account's permission, and reads one small report. It explains the common problems: the API isn't enabled, the account isn't a user on the property, a wrong property format, a deleted key, or a wrong server clock. When the property is wrong, it lists the properties the key can read.
 - Nothing contacts Google until a key and a property are saved. Sign-in goes through the `Peak_SEO_GSC_Credentials` interface, so a "Sign in with Google" (OAuth) option can be added later without touching the rest.
 
+**Weekly data pull.** Once connected, a weekly WordPress cron job (and a **Pull now** button under **Search data**) downloads the last 28 days, ending 3 days ago because Search Console data lags, and the 28 days before that. Each period is pulled as totals, top queries, top pages and query+page pairs (up to 1000 rows each). Each pull is saved as a snapshot in two tables, `{prefix}peak_seo_gsc_pulls` and `{prefix}peak_seo_gsc_data`, so history builds up beyond Google's 16 months. A pull is saved only if every request succeeds; failures are recorded with the reason. Snapshots older than two years are deleted. The weekly event exists only while a key and property are configured. Removing the key stops pulls but keeps the stored data.
+
 Setup in Google: enable the **Google Search Console API** in a Google Cloud project, create a **service account** and a **JSON key**, then in Search Console add the service account email as a user (**Restricted** is enough) under **Settings → Users and permissions**.
 
 ### SEO plugins
@@ -57,7 +59,7 @@ Regular block-editor and classic pages support content edits.
 
 ## Install on a test site
 
-1. Build the zip: `./tools/build-zip.sh` or `python tools/build_zip.py` (creates `dist/peak-seo-0.5.0.zip`). The shell script uses `zip` when installed and falls back to Python, so it works in Git Bash on Windows.
+1. Build the zip: `./tools/build-zip.sh` or `python tools/build_zip.py` (creates `dist/peak-seo-0.6.0.zip`). The shell script uses `zip` when installed and falls back to Python, so it works in Git Bash on Windows.
 2. In WordPress: **Plugins → Add New → Upload Plugin**, choose the zip, **Activate**.
 3. Go to **Peak SEO → Settings** and copy the site key.
 

@@ -22,6 +22,7 @@ class Peak_SEO_Admin {
 		add_action( 'admin_post_peak_seo_gsc_save', array( __CLASS__, 'handle_gsc_save' ) );
 		add_action( 'admin_post_peak_seo_gsc_test', array( __CLASS__, 'handle_gsc_test' ) );
 		add_action( 'admin_post_peak_seo_gsc_remove', array( __CLASS__, 'handle_gsc_remove' ) );
+		add_action( 'admin_post_peak_seo_gsc_pull', array( __CLASS__, 'handle_gsc_pull' ) );
 	}
 
 	public static function menu() {
@@ -168,7 +169,8 @@ class Peak_SEO_Admin {
 			'digest'      => 'Summary email sent to ' . get_option( 'admin_email' ) . '.',
 			'facts'       => 'Approved facts saved. New proposals are checked against them.',
 			'gsc_saved'   => 'Search Console settings saved. Click Test connection to check them.',
-			'gsc_removed' => 'Search Console key removed. Peak SEO no longer contacts Google.',
+			'gsc_removed' => 'Search Console key removed. Peak SEO no longer contacts Google. Data already pulled is kept.',
+			'gsc_pulled'  => 'Search Console data pulled and saved.',
 		);
 		if ( isset( $msgs[ $done ] ) ) {
 			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( $msgs[ $done ] ) . '</p></div>';
@@ -465,6 +467,53 @@ class Peak_SEO_Admin {
 		self::gsc_redirect( array( 'peak_done' => 'gsc_removed' ) );
 	}
 
+	public static function handle_gsc_pull() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Only the site owner can do this.' );
+		}
+		check_admin_referer( 'peak_seo_gsc_pull' );
+		$r = Peak_SEO_GSC_Pull::run( 'manual' );
+		if ( is_wp_error( $r ) ) {
+			self::gsc_redirect( array( 'peak_gsc_error' => rawurlencode( $r->get_error_message() ) ) );
+		}
+		self::gsc_redirect( array( 'peak_done' => 'gsc_pulled' ) );
+	}
+
+	/**
+	 * Last pull, next scheduled pull, stored history, and "Pull now".
+	 */
+	private static function render_gsc_data( $property ) {
+		$last  = Peak_SEO_GSC_Store::latest( $property );
+		$stats = Peak_SEO_GSC_Store::stats( $property );
+		$next  = wp_next_scheduled( Peak_SEO_GSC_Pull::HOOK );
+		$fmt   = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
+
+		echo '<h3 id="peak-gsc-data">Search data</h3><table class="form-table"><tbody>';
+		echo '<tr><th>Last pull</th><td>';
+		if ( $last ) {
+			$when = strtotime( $last['pulled_at'] . ' UTC' );
+			$ok   = 'ok' === $last['status'];
+			echo '<span class="peak-status ' . ( $ok ? 'peak-status-approved' : 'peak-status-rejected' ) . '">' . ( $ok ? 'OK' : 'Failed' ) . '</span> ';
+			echo esc_html( wp_date( $fmt, $when ) . ' (' . human_time_diff( $when ) . ' ago, ' . ( 'cron' === $last['source'] ? 'weekly' : 'manual' ) . ')' );
+			echo '<p class="description">' . esc_html( $last['message'] ) . '</p>';
+		} else {
+			echo 'No data pulled yet.';
+		}
+		echo '</td></tr>';
+		echo '<tr><th>Next weekly pull</th><td>' . ( $next ? esc_html( wp_date( $fmt, $next ) ) : 'Not scheduled' ) . '<p class="description">WordPress runs scheduled jobs when the site gets visits, so it can be a little late on a quiet site.</p></td></tr>';
+		echo '<tr><th>History</th><td>';
+		if ( $stats['pulls'] ) {
+			echo esc_html( sprintf( '%d %s since %s · %s stored · kept for 2 years', $stats['pulls'], 1 === $stats['pulls'] ? 'snapshot' : 'snapshots', wp_date( get_option( 'date_format' ), strtotime( $stats['oldest'] . ' UTC' ) ), size_format( $stats['bytes'] ) ) );
+		} else {
+			echo 'None yet.';
+		}
+		echo '</td></tr></tbody></table>';
+
+		self::gsc_form_open( 'peak_seo_gsc_pull' );
+		echo '<button type="submit" class="button button-primary" onclick="this.disabled=true;this.textContent=\'Pulling… (up to a minute)\';this.form.submit();">Pull now</button></form>';
+		echo '<p class="description">Downloads the last 28 days (ending 3 days ago) and the 28 days before: totals, top queries, top pages and query+page pairs.</p>';
+	}
+
 	private static function render_gsc_settings() {
 		$id       = Peak_SEO_GSC::identity();
 		$has_key  = Peak_SEO_GSC::has_key();
@@ -526,6 +575,10 @@ class Peak_SEO_Admin {
 				echo '</ul>';
 			}
 			echo '</div>';
+		}
+
+		if ( Peak_SEO_GSC::configured() ) {
+			self::render_gsc_data( $property );
 		}
 
 		echo '<details class="peak-gsc-help"><summary>How to set this up in Google</summary><ol>';
