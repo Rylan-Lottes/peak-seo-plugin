@@ -40,8 +40,10 @@ The service **cannot** reject, delete, undo, publish on its own, or touch themes
 **What to work on.** **Peak SEO → Search Console** (administrators) turns the latest snapshot into four lists, with totals compared to the previous 28 days:
 
 1. **Better search title or description:** pages with at least 100 impressions, average position 15 or better, and a click-through rate under half of what that position usually gets. Sorted by missed clicks, with the page's main searches.
-2. **Pages to strengthen:** searches at average position 5–20 with at least 50 impressions, and the page that ranks for each.
-3. **Possible new pages:** searches with at least 30 impressions where no page ranks better than 20.
+2. **Pages to strengthen**, one entry per page. Each page gets the searches (30+ impressions) where it ranks 5–30, plus weaker searches that clearly match its topic, meaning the search contains the words in the page's address ("web design alabama" → `/web-design`). Pages need 50+ impressions across their searches.
+3. **Possible new pages:** searches with 30+ impressions where no page ranks within 30 **and** no existing page covers the topic. A search counts here if only a blog or archive listing (`/blog/`, `/category/…`) shows up for it.
+
+The report favors **quality over quantity**: when existing pages are already found for a topic, it points at improving them instead of adding more pages.
 4. **Biggest position changes:** searches and pages with at least 50 impressions in both periods that moved 3 or more positions.
 
 Under 300 impressions for the whole site, it shows "Not enough data yet" instead. The thresholds can be changed with the `peak_seo_gsc_thresholds` filter. Pages on this site link to their WordPress editor.

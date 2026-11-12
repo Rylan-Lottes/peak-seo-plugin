@@ -53,20 +53,25 @@ class Peak_SEO_GSC_Report_Page {
 		);
 		self::table(
 			$s['striking'],
-			array( 'Search', 'Position', 'Impressions', 'Clicks', 'Page that ranks' ),
+			array( 'Page', 'Searches it could win (position)', 'Impressions', 'Clicks', 'Avg position' ),
 			function ( $i ) {
+				$list = array();
+				foreach ( array_slice( $i['searches'], 0, 6 ) as $q ) {
+					$list[] = esc_html( $q['query'] ) . ' <span class="description">(' . esc_html( $q['position'] ) . ')</span>';
+				}
+				$more = $i['search_count'] - count( $list );
 				return array(
-					'<strong>' . esc_html( $i['query'] ) . '</strong>',
-					esc_html( $i['position'] ),
+					self::page_cell( $i['page'], $i ),
+					implode( '<br />', $list ) . ( $more > 0 ? '<br /><span class="description">+ ' . (int) $more . ' more</span>' : '' ),
 					number_format_i18n( $i['impressions'] ),
 					number_format_i18n( $i['clicks'] ),
-					$i['page'] ? self::page_cell( $i['page'], $i ) : '&mdash;',
+					esc_html( $i['position'] ),
 				);
 			}
 		);
 		self::table(
 			$s['new_content'],
-			array( 'Search', 'Impressions', 'Best position', 'Closest page' ),
+			array( 'Search', 'Impressions', 'Best position', 'Shows up on' ),
 			function ( $i ) {
 				return array(
 					'<strong>' . esc_html( $i['query'] ) . '</strong>',
