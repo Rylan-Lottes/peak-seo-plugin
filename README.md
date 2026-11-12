@@ -2,7 +2,7 @@
 
 Connects a WordPress site to the Peak SEO service. The service reads the site and sends **proposals** (better search titles and descriptions, improved page content, new pages). Nothing changes on the site until it is approved, either by the owner in the WordPress dashboard or, if the owner allows it, by Peak Visibility. Every approved change can be undone.
 
-Version 0.6.0. An early version, built to test the full loop on a test site.
+Version 0.7.0. An early version, built to test the full loop on a test site.
 
 ## What it does
 
@@ -37,6 +37,17 @@ The service **cannot** reject, delete, undo, publish on its own, or touch themes
 
 **Weekly data pull.** Once connected, a weekly WordPress cron job (and a **Pull now** button under **Search data**) downloads the last 28 days, ending 3 days ago because Search Console data lags, and the 28 days before that. Each period is pulled as totals, top queries, top pages and query+page pairs (up to 1000 rows each). Each pull is saved as a snapshot in two tables, `{prefix}peak_seo_gsc_pulls` and `{prefix}peak_seo_gsc_data`, so history builds up beyond Google's 16 months. A pull is saved only if every request succeeds; failures are recorded with the reason. Snapshots older than two years are deleted. The weekly event exists only while a key and property are configured. Removing the key stops pulls but keeps the stored data.
 
+**What to work on.** **Peak SEO → Search Console** (administrators) turns the latest snapshot into four lists, with totals compared to the previous 28 days:
+
+1. **Better search title or description:** pages with at least 100 impressions, average position 15 or better, and a click-through rate under half of what that position usually gets. Sorted by missed clicks, with the page's main searches.
+2. **Pages to strengthen:** searches at average position 5–20 with at least 50 impressions, and the page that ranks for each.
+3. **Possible new pages:** searches with at least 30 impressions where no page ranks better than 20.
+4. **Biggest position changes:** searches and pages with at least 50 impressions in both periods that moved 3 or more positions.
+
+Under 300 impressions for the whole site, it shows "Not enough data yet" instead. The thresholds can be changed with the `peak_seo_gsc_thresholds` filter. Pages on this site link to their WordPress editor.
+
+The same report is JSON at `GET /wp-json/peak-seo/v1/gsc-report`. An administrator can read it with an Application Password (`curl -u admin:"xxxx xxxx xxxx xxxx xxxx xxxx" https://example.com/wp-json/peak-seo/v1/gsc-report`), and so can a request signed with the Peak SEO site key.
+
 Setup in Google: enable the **Google Search Console API** in a Google Cloud project, create a **service account** and a **JSON key**, then in Search Console add the service account email as a user (**Restricted** is enough) under **Settings → Users and permissions**.
 
 ### SEO plugins
@@ -59,7 +70,7 @@ Regular block-editor and classic pages support content edits.
 
 ## Install on a test site
 
-1. Build the zip: `./tools/build-zip.sh` or `python tools/build_zip.py` (creates `dist/peak-seo-0.6.0.zip`). The shell script uses `zip` when installed and falls back to Python, so it works in Git Bash on Windows.
+1. Build the zip: `./tools/build-zip.sh` or `python tools/build_zip.py` (creates `dist/peak-seo-0.7.0.zip`). The shell script uses `zip` when installed and falls back to Python, so it works in Git Bash on Windows.
 2. In WordPress: **Plugins → Add New → Upload Plugin**, choose the zip, **Activate**.
 3. Go to **Peak SEO → Settings** and copy the site key.
 
@@ -109,6 +120,7 @@ X-Peak-Signature: hex(HMAC_SHA256(site_key, "<timestamp>\n<METHOD>\n<route>\n<ra
 | POST | `/proposals` | Submit a proposal (below) |
 | GET | `/proposals?status=pending` | List proposals |
 | GET | `/proposals/{id}` | One proposal with its status, `needs_owner`, `owner_reasons`, `approved_by` and log |
+| GET | `/gsc-report` | Search Console "what to work on" report. Administrator (Application Password) **or** signed request |
 | POST | `/proposals/{id}/approve` | Approve as Peak Visibility (empty body). Only when central approval is on and the proposal isn't `needs_owner` |
 
 Proposal body:

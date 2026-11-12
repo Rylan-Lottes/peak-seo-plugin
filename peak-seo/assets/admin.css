@@ -34,3 +34,14 @@
 .peak-seo .peak-gsc-fail { border-left-color: #d63638; }
 .peak-seo .peak-gsc-help { max-width: 760px; margin: 12px 0 20px; }
 .peak-seo .peak-gsc-help summary { cursor: pointer; font-weight: 600; }
+.peak-seo .peak-tiles { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0 8px; max-width: 960px; }
+.peak-seo .peak-tile { background: #fff; border: 1px solid #dcdcde; border-radius: 8px; padding: 12px 16px; min-width: 170px; flex: 1; }
+.peak-seo .peak-tile-label { color: #50575e; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+.peak-seo .peak-tile-value { font-size: 24px; font-weight: 600; margin: 4px 0; }
+.peak-seo .peak-tile-change { font-size: 12px; }
+.peak-seo .peak-move-up { color: #00703c; }
+.peak-seo .peak-move-down { color: #b32d2e; }
+.peak-seo .peak-count-badge { display: inline-block; background: #f0f0f1; color: #50575e; border-radius: 10px; padding: 0 8px; font-size: 13px; vertical-align: middle; }
+.peak-seo .peak-report { max-width: 1100px; }
+.peak-seo .peak-report td { vertical-align: top; }
+.peak-seo .peak-none { color: #50575e; font-style: italic; }

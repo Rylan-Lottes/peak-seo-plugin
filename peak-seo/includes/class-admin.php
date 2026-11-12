@@ -30,6 +30,7 @@ class Peak_SEO_Admin {
 		$badge   = $pending ? ' <span class="awaiting-mod">' . (int) $pending . '</span>' : '';
 		add_menu_page( 'Peak SEO', 'Peak SEO' . $badge, 'edit_pages', self::SLUG, array( __CLASS__, 'render_proposals' ), 'dashicons-chart-line', 81 );
 		add_submenu_page( self::SLUG, 'Proposed changes', 'Proposed changes', 'edit_pages', self::SLUG, array( __CLASS__, 'render_proposals' ) );
+		add_submenu_page( self::SLUG, 'Search Console: what to work on', 'Search Console', 'manage_options', self::SLUG . '-gsc', array( 'Peak_SEO_GSC_Report_Page', 'render' ) );
 		add_submenu_page( self::SLUG, 'Peak SEO settings', 'Settings', 'manage_options', self::SLUG . '-settings', array( __CLASS__, 'render_settings' ) );
 	}
 
