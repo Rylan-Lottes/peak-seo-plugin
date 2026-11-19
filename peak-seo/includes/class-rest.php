@@ -15,6 +15,7 @@
  *   GET  /proposals/{id}     one proposal
  *   POST /proposals/{id}/approve   approve (only with the owner's permission)
  *   GET  /gsc-report         Search Console "what to work on" report (admin or signed)
+ *   GET  /discipline         Page Discipline: health, competing pages, cleanup, new-page allowance
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -29,6 +30,7 @@ class Peak_SEO_Rest {
 		$auth = array( 'Peak_SEO_Auth', 'check' );
 
 		register_rest_route( self::NS, '/site', array( 'methods' => 'GET', 'callback' => array( __CLASS__, 'site' ), 'permission_callback' => $auth ) );
+		register_rest_route( self::NS, '/discipline', array( 'methods' => 'GET', 'callback' => array( __CLASS__, 'discipline' ), 'permission_callback' => array( __CLASS__, 'admin_or_signed' ) ) );
 		register_rest_route( self::NS, '/gsc-report', array( 'methods' => 'GET', 'callback' => array( __CLASS__, 'gsc_report' ), 'permission_callback' => array( __CLASS__, 'admin_or_signed' ) ) );
 		register_rest_route( self::NS, '/pages', array( 'methods' => 'GET', 'callback' => array( __CLASS__, 'pages' ), 'permission_callback' => $auth ) );
 		register_rest_route( self::NS, '/pages/(?P<id>\d+)', array( 'methods' => 'GET', 'callback' => array( __CLASS__, 'page' ), 'permission_callback' => $auth ) );
@@ -62,6 +64,10 @@ class Peak_SEO_Rest {
 		);
 	}
 
+	public static function discipline() {
+		return rest_ensure_response( Peak_SEO_Discipline::build() );
+	}
+
 	public static function gsc_report() {
 		$report                 = Peak_SEO_GSC_Report::build();
 		$report['google_sees_changes'] = Peak_SEO_Freshness::checks( $report['property'] ?? '' ); // Not cached: reads live settings.
@@ -81,6 +87,7 @@ class Peak_SEO_Rest {
 			'seo_editable'   => Peak_SEO_Fields::supported(),
 			'central_approval' => Peak_SEO_Proposals::central_approval_enabled(),
 			'approved_facts'   => Peak_SEO_Owner_Check::approved_facts(), // Read-only: only the owner can change these.
+			'discipline'       => Peak_SEO_Discipline::settings(),      // Read-only for the service.
 			'page_builders'  => array_values(
 				array_filter(
 					array(
@@ -115,7 +122,7 @@ class Peak_SEO_Rest {
 			'page_builder'    => $builder,
 			'content_editing' => $editable, // content | elementor_text | none
 			'word_count'      => str_word_count( wp_strip_all_tags( $post->post_content ) ),
-		);
+		) + Peak_SEO_Discipline::page_facts( $post );
 	}
 
 	public static function pages() {

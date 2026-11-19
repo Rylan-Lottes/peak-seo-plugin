@@ -23,6 +23,8 @@ import json
 import os
 import re
 import sys
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -165,8 +167,9 @@ def needs_seo(page):
     return not t or not d or len(t) > SEO_TITLE_MAX or len(d) > SEO_DESC_MAX
 
 
-def pick(site, pages, proposals, kmap, cfg):
-    """The single most valuable improvement, or None."""
+def pick(site, pages, proposals, kmap, cfg, blocked=frozenset(), new_pages_ok=True):
+    """Fallback: the old simple checks (missing/too-long search fields, thin pages,
+    keyword-map new pages). Used when Search Console data is missing, stale or thin."""
     busy, recent, slugs = recent_work(proposals, cfg["cooldown_days"])
     mapped = [r["page"].strip("/ ").lower() for r in kmap]
 
@@ -175,30 +178,220 @@ def pick(site, pages, proposals, kmap, cfg):
         return (0 if is_front(p, site) else 1, 0 if slug in mapped else 1,
                 mapped.index(slug) if slug in mapped else 0, 0 if p.get("type") == "page" else 1, p.get("title", ""))
 
-    free = [p for p in sorted(pages, key=order) if p["id"] not in busy]
+    free = [p for p in sorted(pages, key=order) if p["id"] not in busy and p["id"] not in blocked]
 
     for p in free:
         if needs_seo(p) and (p["id"], "update_seo") not in recent:
             missing = [n for n, v in (("search title", p.get("seo_title")), ("description", p.get("seo_description"))) if not v]
             why = ("missing " + " and ".join(missing)) if missing else "search title or description too long"
-            return {"kind": "update_seo", "page": p, "why": why, "keyword": keyword_for(p, kmap)}
+            return {"kind": "update_seo", "category": "fallback_seo", "page": p, "why": why, "keyword": keyword_for(p, kmap)}
 
     for p in free:
         if p.get("content_editing") in ("content", "elementor_text") and p.get("word_count", 0) < cfg["thin_word_count"] \
                 and (p["id"], "update_content") not in recent:
-            return {"kind": "update_content", "page": p, "keyword": keyword_for(p, kmap),
+            return {"kind": "update_content", "category": "fallback_thin", "page": p, "keyword": keyword_for(p, kmap),
                     "why": f"thin page ({p.get('word_count', 0)} words)"}
 
+    if not new_pages_ok:
+        return None
     existing = {p.get("slug", "").lower() for p in pages}
     for row in kmap:
         m = re.match(r"^new\s*:?\s*(.*)$", row["page"].strip(), re.I)
         if not m:
             continue
         slug = re.sub(r"[^a-z0-9-]+", "-", (m.group(1) or row["keyword"]).lower()).strip("-")
+        if any(covers(words(p.get("title")) + words(p.get("slug")) + words(p.get("h1", "")), row["keyword"]) for p in pages):
+            continue  # Evidence rule: a page already targets this keyword, so no new page.
         if slug and slug not in existing and slug not in slugs:
-            return {"kind": "create_page", "page": None, "keyword": row["keyword"], "slug": slug,
+            return {"kind": "create_page", "category": "fallback_new", "page": None, "keyword": row["keyword"], "slug": slug,
                     "why": f"no page targets \"{row['keyword']}\" yet"}
     return None
+
+
+# --------------------------------------------------------------------------
+# Choosing work from the Search Console report (Page Discipline rules)
+# --------------------------------------------------------------------------
+
+STOP = {"a", "an", "and", "the", "of", "for", "in", "on", "to", "with", "is", "are", "what", "how", "why",
+        "your", "our", "me", "my", "near", "best", "top", "vs", "versus", "do", "does", "can", "i"}
+
+
+def path_of(url):
+    p = urllib.parse.urlparse(str(url or "")).path
+    return "/" + urllib.parse.unquote(p).strip("/").lower()
+
+
+def words(text):
+    out = []
+    for w in re.split(r"[^a-z0-9]+", str(text or "").lower()):
+        if w and not w.isdigit() and w not in STOP:
+            out.append(w[:-1] if len(w) > 3 and w.endswith("s") else w)
+    return out
+
+
+def covers(page_words, query):
+    """Every main word of the search appears (as a word or prefix) in the page's words."""
+    need = [w for w in words(query) if len(w) > 2]  # Ignore state codes ("al") and other tiny words.
+    return bool(need) and all(any(h.startswith(n) or n.startswith(h) for h in page_words if len(h) > 2) for n in need)
+
+
+def towns(site, notes):
+    """Approved service areas: plugin list first (owner-controlled), else the notes."""
+    areas = (site.get("approved_facts") or {}).get("service_areas") or bullets(notes.get("Approved service areas"))
+    return [re.sub(r",\s*[A-Z]{2}$", "", a).strip().lower() for a in areas if a.strip()]
+
+
+def fetch_h1s(pages, limit=80, timeout=6):
+    """Read each page's public H1 (the brain sees the site like a visitor). Best effort."""
+    for p in pages[:limit]:
+        if "h1" in p or not p.get("url"):
+            continue
+        try:
+            req = urllib.request.Request(p["url"], headers={"User-Agent": "PeakSEO-brain/1.0"})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                html = r.read(400_000).decode("utf-8", "replace")
+            m = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.I | re.S)
+            p["h1"] = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", m.group(1))).strip() if m else ""
+        except Exception:  # noqa: BLE001 - a page that doesn't load just has no H1 evidence.
+            p["h1"] = ""
+
+
+def data_status(report, discipline, settings):
+    """(usable, reason). Fallback is used when the data is missing, stale or too thin."""
+    if not report or not report.get("available"):
+        return False, "no Search Console data yet"
+    if not report.get("enough_data"):
+        return False, "too little Search Console data"
+    d = (discipline or {}).get("data") or {}
+    if not d.get("available"):
+        return False, "no Search Console data yet"
+    if not d.get("fresh", False):
+        return False, f"Search Console data is {d.get('age_days', '?')} days old (limit {settings.get('stale_data_days', 14)})"
+    return True, ""
+
+
+def find_drops(report, proposals, min_drop=3.0):
+    """Big position drops, matched with the Peak SEO changes approved during the two
+    compared periods (report only, never a change)."""
+    out = []
+    start = parse_time((report.get("previous") or {}).get("start") or "1970-01-01")
+    for m in ((report.get("sections") or {}).get("movers") or {}).get("items", []):
+        if m.get("direction") != "down" or abs(m.get("change", 0)) < min_drop:
+            continue
+        related = []
+        for p in proposals:
+            if p.get("status") not in ("approved", "undone") or not p.get("approved_at") or parse_time(p["approved_at"]) < start:
+                continue
+            if m["type"] == "query" or p.get("_path") == path_of(m["key"]):
+                related.append(f"#{p['id']} {p.get('kind')} ({str(p.get('approved_at'))[:10]})")
+        out.append({
+            "type": m["type"], "key": m["key"], "before": m.get("position_before"), "now": m.get("position"),
+            "changes": related[:5],
+            "text": f"{m['type']} \"{m['key']}\" dropped from {m.get('position_before')} to {m.get('position')}"
+                    + (f"; Peak SEO changes approved in this period: {', '.join(related[:5])}" if related else "; no Peak SEO changes in this period"),
+        })
+    return out
+
+
+def select_work(ctx):
+    """The single most valuable improvement, following the GoBIG order:
+    (1) competing pages, (2) low CTR, (3) strengthen, (4) real gaps; drops are reported, not changed.
+    Returns (choice or None, notes[]) where notes explain skipped work and fallbacks."""
+    site, pages, proposals = ctx["site"], ctx["pages"], ctx["proposals"]
+    report, disc, cfg, notes_sec = ctx.get("report"), ctx.get("discipline"), ctx["cfg"], ctx["notes"]
+    settings = (disc or {}).get("settings") or site.get("discipline") or {}
+    by_path = {path_of(p.get("url")): p for p in pages}
+    busy = {p.get("target_id") for p in proposals if p.get("status") == "pending"}
+    for p in proposals:
+        p["_path"] = path_of(next((x.get("url") for x in pages if x["id"] == p.get("target_id")), ""))
+    drops = find_drops(report or {}, proposals) if report and report.get("available") else []
+    problem = {by_path[path_of(d["key"])]["id"] for d in drops if d["type"] == "page" and path_of(d["key"]) in by_path}
+    recent = {int(k) for k in ((disc or {}).get("recently_changed") or {}).keys()}
+    blocked = (recent - problem) | busy  # 4-week rule, unless the data shows a problem with the page.
+    log = []
+    new_ok = ((disc or {}).get("new_pages") or {}).get("allowed", True)
+
+    def ok_page(url, editable=True, refocus=False):
+        p = by_path.get(path_of(url))
+        if not p:
+            return None
+        if p["id"] in blocked:
+            log.append(f"skipped {p['title']}: changed in the last {settings.get('recent_change_days', 28)} days" if p["id"] in recent else f"skipped {p['title']}: a proposal is already waiting")
+            return None
+        if refocus and (p.get("is_front") or p.get("is_contact") or p.get("protected")):
+            return None
+        if editable and p.get("content_editing") not in ("content", "elementor_text"):
+            log.append(f"skipped {p['title']}: its page builder can't be edited yet")
+            return None
+        return p
+
+    usable, why_not = data_status(report, disc, settings)
+    if usable:
+        sec = report.get("sections") or {}
+
+        # (1) Competing pages: refocus the weaker page and link it to the main one.
+        for c in (disc or {}).get("competing", []):
+            main = by_path.get(path_of(c["main"]))
+            page = ok_page(c["refocus"], refocus=True)
+            if main and page:
+                q = c["queries"][0]["query"]
+                return {"kind": "update_content", "category": "competing", "page": page, "source": "report",
+                        "keyword": None, "queries": c["queries"], "link": {"url": main["url"], "anchor": q, "title": main["title"]},
+                        "why": f"competes with {main['title']} for \"{q}\"" + (f" and {len(c['queries']) - 1} more" if len(c["queries"]) > 1 else "")}, log
+
+        # (2) Shown often, clicked rarely: new search title and description.
+        for item in (sec.get("low_ctr") or {}).get("items", []):
+            page = ok_page(item["page"], editable=False)
+            if page:
+                return {"kind": "update_seo", "category": "low_ctr", "page": page, "source": "report",
+                        "keyword": (item.get("top_queries") or [None])[0], "queries": [{"query": q} for q in item.get("top_queries", [])],
+                        "why": f"{item['impressions']} impressions but {round(item['ctr'] * 100, 2)}% clicks (usual for position {item['position']} is about {round(item['expected_ctr'] * 100, 1)}%)"}, log
+
+        # (3) Strengthen pages already close to the top, then close cleanup candidates.
+        for item in (sec.get("striking") or {}).get("items", []):
+            page = ok_page(item["page"])
+            if page:
+                n = item.get("search_count", len(item.get("searches", [])))
+                return {"kind": "update_content", "category": "strengthen", "page": page, "source": "report",
+                        "keyword": item["searches"][0]["query"] if item.get("searches") else None, "queries": item.get("searches", []),
+                        "why": f"strengthen for {n} {'search' if n == 1 else 'searches'} at average position {item.get('position')}"}, log
+        for c in (disc or {}).get("cleanup", []):
+            if c.get("action") == "strengthen":
+                page = ok_page(c["url"])
+                if page:
+                    return {"kind": "update_content", "category": "strengthen", "page": page, "source": "report",
+                            "keyword": None, "queries": [], "why": f"cleanup candidate close to ranking: {c['why']}"}, log
+
+        # (4) Real gaps: a new page, only if Page Discipline allows and no page already targets it.
+        gaps = (sec.get("new_content") or {}).get("items", [])
+        if gaps and not new_ok:
+            log.append("new pages not allowed: " + " ".join(((disc or {}).get("new_pages") or {}).get("reasons", [])))
+        home_towns = towns(site, notes_sec)
+        if gaps and new_ok:
+            ctx.get("h1_fetcher", fetch_h1s)(pages)  # Evidence: titles, slugs and real H1s.
+        for g in gaps if new_ok else []:
+            q = g["query"]
+            target = next((p for p in pages if covers(words(p.get("title")) + words(p.get("slug")) + words(p.get("h1", "")), q)), None)
+            if target:
+                page = ok_page(target["url"])
+                if page:
+                    return {"kind": "update_content", "category": "strengthen", "page": page, "source": "report",
+                            "keyword": q, "queries": [g], "why": f"\"{q}\" has no ranking page, but {page['title']} already targets it: strengthen instead of adding a page"}, log
+                continue
+            other_town = next((t for t in home_towns[1:] if t and t in q.lower()), None)
+            if other_town:
+                log.append(f"skipped location page for \"{q}\": location pages need a real job in {other_town.title()} in the owner's facts (coming with the owner interview)")
+                continue
+            slug = re.sub(r"[^a-z0-9-]+", "-", q.lower()).strip("-")[:60]
+            return {"kind": "create_page", "category": "gap", "page": None, "source": "report", "keyword": q, "slug": slug,
+                    "queries": [g], "why": f"{g['impressions']} impressions for \"{q}\" and no page ranks better than {g.get('best_position')}"}, log
+        log.append("nothing in the Search Console report needs work right now; using the simple checks")
+        why_not = "nothing in the report needs work"
+
+    choice = pick(site, pages, proposals, keyword_map(notes_sec.get("Keyword map")), cfg, blocked=blocked, new_pages_ok=new_ok)
+    if choice:
+        choice["source"] = f"fallback ({why_not})"
+    return choice, log
 
 
 # --------------------------------------------------------------------------
@@ -216,7 +409,16 @@ Rules:
 - Set proceed to false (and explain in why_not) only if a useful change truly can't be written from the notes.
 - Set owner_should_review to true if the change alters what the page promises, even when every fact comes from the notes.
 - summary is one short line the owner sees in their dashboard; reason says in one or two sentences why the change helps.
-- facts_used lists each fact from the notes you relied on, quoted briefly."""
+- facts_used lists each fact from the notes you relied on, quoted briefly.
+
+Local SEO method (GoBIG Systems), which every change follows:
+- A small site where every page earns its place: improve an existing page before suggesting another.
+- One page per money keyword. A page that shares a search with another page is refocused on a different question.
+- On service and location pages, the title shown as the page's H1 names the service and the town (an approved service area).
+- H2 headings are questions people actually search (use the searches given in the task, worded naturally).
+- True, specific details instead of generic copy: real services, towns, materials, and jobs from the notes. Never write "Why choose us" blocks, emergency clichés ("burst pipe at 2 a.m."), directions ("just off Highway 72"), vague "trusted experts" claims, or filler intros ("When it comes to…", "In today's world…").
+- FAQ entries answer specific questions a customer would ask this business, built from the notes and the searches; never generic ones ("Do you take credit cards?") or ones whose answer isn't in the notes.
+- Text changes only: never change layout, design, or structured data (schema)."""
 
 COMMON = {
     "proceed": {"type": "boolean"},
@@ -236,7 +438,7 @@ def schema(extra):
 
 SCHEMAS = {
     "seo": schema({"seo_title": {"type": "string"}, "seo_description": {"type": "string"}}),
-    "content": schema({"content": {"type": "string"}}),
+    "content": schema({"title": {"type": "string"}, "content": {"type": "string"}}),
     "elementor": schema({"edits": {"type": "array", "items": {
         "type": "object", "properties": {"id": {"type": "string"}, "text": {"type": "string"}},
         "required": ["id", "text"], "additionalProperties": False}}}),
@@ -250,31 +452,74 @@ def page_brief(page):
     return {k: page[k] for k in keep if k in page}
 
 
+def search_lines(choice):
+    rows = []
+    for q in (choice.get("queries") or [])[:12]:
+        bits = [f"\"{q['query']}\""]
+        if q.get("position") is not None:
+            bits.append(f"position {q['position']}")
+        if q.get("impressions"):
+            bits.append(f"{q['impressions']} impressions")
+        rows.append("- " + ", ".join(bits))
+    return "\n".join(rows)
+
+
 def build_task(choice, page, site, cfg):
     kw = choice.get("keyword")
     kw_line = f"Target keyword: \"{kw}\"." if kw else "No target keyword is mapped for this page; choose wording from what the page is about."
+    cat = choice.get("category", "")
+    searches = search_lines(choice)
+    elementor = page.get("content_editing") == "elementor_text"
+    widget_rules = (
+        "You can only change the text of the widgets listed in elementor_text, by id. Headings: short, no HTML except "
+        "<strong>/<em>. Text widgets (label 'Text' or 'Paragraph'): short paragraphs of HTML (<p>, <strong>, <em>, <ul>/<li>, "
+        "<a href>). Only include widgets you change; don't fill an empty widget unless it clearly should hold a heading."
+    )
+    body_rules = (
+        "Return the complete new body in WordPress block markup (<!-- wp:paragraph --><p>…</p><!-- /wp:paragraph -->, "
+        "<!-- wp:heading --><h2>…</h2><!-- /wp:heading -->, lists as <!-- wp:list --><ul><li>…</li></ul><!-- /wp:list -->). "
+        "No <h1> in the body: the theme shows the page title as the H1. Return title as the new page title (its H1) "
+        "only if it should change, else an empty string. Keep every accurate point that is there now."
+    )
+
     if choice["kind"] == "update_seo":
+        extra = f"\nThe page's main searches in Google:\n{searches}" if searches else ""
         return "seo", (
-            f"Write a better search title and meta description for this page ({choice['why']}). {kw_line}\n"
+            f"Write a better search title and meta description for this page ({choice['why']}). {kw_line}{extra}\n"
             f"The site uses the {site.get('seo_plugin')} SEO plugin. Return both fields, even if one is fine today "
             f"(return it unchanged in that case)."
         )
-    if choice["kind"] == "update_content" and page.get("content_editing") == "elementor_text":
+
+    if cat == "competing":
+        link = choice["link"]
+        task = (
+            f"This page competes with another page of the site, \"{link['title']}\" ({link['url']}), for these searches:\n{searches}\n"
+            f"\"{link['title']}\" should own them. Refocus THIS page on a different, related question a customer asks, one it can "
+            "answer well from the notes, so it no longer targets those searches (adjust its headings and wording; keep what's "
+            "accurate). Then add ONE natural sentence that links to the main page, with the link text exactly "
+            f"\"{link['anchor']}\": <a href=\"{link['url']}\">{link['anchor']}</a>."
+        )
+        return ("elementor", task + " Put the link inside a Text widget.\n" + widget_rules) if elementor else ("content", task + "\n" + body_rules)
+
+    if cat == "strengthen":
+        task = (
+            f"Strengthen this page ({choice['why']}).\n"
+            + (f"Searches it should win:\n{searches}\n" if searches else "")
+            + "Make it the clearly best answer for these searches: fuller, specific content from the notes; H2 headings worded as "
+            "the questions people search; a short FAQ of specific questions answered from the notes; the service and town in the "
+            "H1/title if this is a service page. Don't add searches' wording unnaturally."
+        )
+        return ("elementor", task + "\n" + widget_rules) if elementor else ("content", task + " Aim for roughly 400–800 useful words.\n" + body_rules)
+
+    if choice["kind"] == "update_content" and elementor:
         return "elementor", (
             f"This page is thin ({page.get('word_count')} words) and built with Elementor. {kw_line}\n"
-            "You can only change the text of the widgets listed in elementor_text, by id. Improve them so the page "
-            "explains clearly what the business offers and to whom. Headings: short, no HTML except <strong>/<em>. "
-            "Text widgets (label 'Text' or 'Paragraph'): short paragraphs of HTML (<p>, <strong>, <em>, <ul>/<li>). "
-            "Only include widgets you actually change; don't fill a widget that is empty unless it clearly should "
-            "hold a heading."
+            "Improve it so the page explains clearly what the business offers and to whom.\n" + widget_rules
         )
     if choice["kind"] == "update_content":
         return "content", (
             f"This page is thin ({page.get('word_count')} words). {kw_line}\n"
-            "Rewrite and expand the page body to roughly 350–600 useful words for the people the business serves. "
-            "Keep every accurate point that is there now. Return the complete new body in WordPress block markup "
-            "(<!-- wp:paragraph --><p>…</p><!-- /wp:paragraph -->, <!-- wp:heading --><h2>…</h2><!-- /wp:heading -->, "
-            "lists as <!-- wp:list --><ul><li>…</li></ul><!-- /wp:list -->). No <h1>; the theme shows the title."
+            "Rewrite and expand the page body to roughly 350–600 useful words for the people the business serves. " + body_rules
         )
     return "new_page", (
         f"Write a new page targeting \"{kw}\" ({choice['why']}). Use slug \"{choice['slug']}\" unless it reads badly.\n"
@@ -376,6 +621,17 @@ def cost_line(c):
 # Turning Claude's answer into a proposal
 # --------------------------------------------------------------------------
 
+def link_problems(choice, html):
+    """A competing-pages fix must link to the main page with the search as link text."""
+    link = choice.get("link")
+    if not link:
+        return []
+    for href, text in re.findall(r"<a\s[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", html, re.I | re.S):
+        if path_of(href) == path_of(link["url"]) and re.sub(r"<[^>]+>|\s+", " ", text).strip().lower() == link["anchor"].lower():
+            return []
+    return [f"no link to {link['url']} with the text \"{link['anchor']}\""]
+
+
 def build_proposal(choice, page, shape, out):
     """→ (payload, problems)."""
     problems = []
@@ -411,13 +667,21 @@ def build_proposal(choice, page, shape, out):
                 edits.append({"id": e["id"], "text": e["text"].strip()})
         if not edits:
             problems.append("no widget text changed")
+        problems += link_problems(choice, " ".join(e["text"] for e in edits))
         return dict(common, kind="update_content", target_id=page["id"], changes={"elementor": edits}), problems
 
     if shape == "content":
         content = (out.get("content") or "").strip()
+        title = (out.get("title") or "").strip()
         if len(re.sub(r"<[^>]+>", " ", content).split()) < 50:
             problems.append("new content is too short")
-        return dict(common, kind="update_content", target_id=page["id"], changes={"content": content}), problems
+        if re.search(r"<h1[\s>]", content, re.I):
+            problems.append("the body has an <h1>: the page title is the H1")
+        problems += link_problems(choice, content)
+        changes = {"content": content}
+        if title and title != (page.get("title") or ""):
+            changes["title"] = title
+        return dict(common, kind="update_content", target_id=page["id"], changes=changes), problems
 
     title, content = (out.get("title") or "").strip(), (out.get("content") or "").strip()
     slug = re.sub(r"[^a-z0-9-]+", "-", (out.get("slug") or choice["slug"]).lower()).strip("-")
@@ -452,13 +716,37 @@ def show_proposal(payload, page):
 # --------------------------------------------------------------------------
 
 def read_site(cfg, key):
-    def get(route, params=None):
+    def get(route, params=None, optional=False):
         status, body = call(cfg["site_url"], key, "GET", route, params=params)
         if status >= 400:
+            if optional:
+                return None  # Older plugin or Search Console not connected: the brain falls back.
             msg = body.get("message") if isinstance(body, dict) else body
             sys.exit(f"Site API {route} failed: HTTP {status} {msg}")
         return body
-    return get("/site"), get("/pages"), get("/proposals")
+    return get("/site"), get("/pages"), get("/proposals"), get("/gsc-report", optional=True), get("/discipline", optional=True)
+
+
+def context(cfg, key, notes):
+    site, pages, proposals, report, discipline = read_site(cfg, key)
+    return {"site": site, "pages": pages, "proposals": proposals, "report": report, "discipline": discipline,
+            "cfg": cfg, "notes": notes}
+
+
+def describe(choice):
+    target = f"{choice['page']['title']} (#{choice['page']['id']})" if choice.get("page") else f"new page /{choice['slug']}/"
+    return target, (f"{choice['kind']} on {target}: {choice['why']}"
+                    + (f" · keyword \"{choice['keyword']}\"" if choice.get("keyword") else "")
+                    + f" · from: {choice.get('source', 'report')}")
+
+
+def print_findings(ctx, log_lines):
+    drops = find_drops(ctx["report"], ctx["proposals"]) if ctx.get("report") and ctx["report"].get("available") else []
+    for d in drops:
+        print(f"Finding (report only): {d['text']}")
+    for line in log_lines:
+        print(f"Note: {line}")
+    return [f"finding: {d['text']}" for d in drops]
 
 
 def facts_warning(notes, site):
@@ -479,16 +767,16 @@ def cmd_plan(args):
     site_dir = Path(args.site_dir)
     cfg = load_config(site_dir)
     notes = sections((site_dir / cfg["notes_file"]).read_text(encoding="utf-8"))
-    site, pages, proposals = read_site(cfg, site_key(cfg))
+    ctx = context(cfg, site_key(cfg), notes)
+    site = ctx["site"]
     print(f"{site['name']} · plugin {site.get('plugin_version')} · central approval {'on' if site.get('central_approval') else 'off'}")
     facts_warning(notes, site)
-    choice = pick(site, pages, proposals, keyword_map(notes.get("Keyword map")), cfg)
+    choice, log_lines = select_work(ctx)
+    print_findings(ctx, log_lines)
     if not choice:
-        print("Nothing to do: every page has search fields, no thin pages, no new pages in the keyword map.")
+        print("Nothing to do right now.")
         return
-    target = f"{choice['page']['title']} (#{choice['page']['id']})" if choice["page"] else f"new page /{choice['slug']}/"
-    print(f"Next run would do: {choice['kind']} on {target}: {choice['why']}"
-          + (f" · keyword \"{choice['keyword']}\"" if choice.get("keyword") else ""))
+    print("Next run would do: " + describe(choice)[1])
 
 
 def cmd_run(args):
@@ -500,16 +788,18 @@ def cmd_run(args):
     notes = sections(notes_text)
     started = now_utc()
 
-    site, pages, proposals = read_site(cfg, key)
+    ctx = context(cfg, key, notes)
+    site = ctx["site"]
     print(f"{site['name']} · plugin {site.get('plugin_version')} · central approval {'on' if site.get('central_approval') else 'off'}"
           + (" · DRY RUN" if args.dry_run else ""))
     facts_warning(notes, site)
 
-    choice = pick(site, pages, proposals, keyword_map(notes.get("Keyword map")), cfg)
+    choice, log_lines = select_work(ctx)
+    findings = print_findings(ctx, log_lines)
     if not choice:
-        print("Nothing to do: every page has search fields, no thin pages, no new pages in the keyword map.")
+        print("Nothing to do right now.")
         if not args.dry_run:
-            log(notes_path, started, "nothing to do", None, [])
+            log(notes_path, started, "nothing to do", None, [], findings)
         return
 
     page = None
@@ -517,9 +807,8 @@ def cmd_run(args):
         status, page = call(cfg["site_url"], key, "GET", f"/pages/{choice['page']['id']}")
         if status >= 400:
             sys.exit(f"Could not read page #{choice['page']['id']}: HTTP {status}")
-    target = f"{page['title']} (#{page['id']})" if page else f"new page /{choice['slug']}/"
-    print(f"Picked: {choice['kind']} on {target}: {choice['why']}"
-          + (f" · keyword \"{choice['keyword']}\"" if choice.get("keyword") else ""))
+    target, line = describe(choice)
+    print("Picked: " + line)
     print(f"Asking {cfg['model']} (effort {cfg['effort']})…")
 
     shape, out, cost, error = ask_claude(cfg, notes_text, site, page, choice)
@@ -530,7 +819,7 @@ def cmd_run(args):
         if questions:
             print("Open questions for the owner:\n  - " + "\n  - ".join(questions))
         if not args.dry_run:
-            log(notes_path, started, f"{choice['kind']} · {target} · {outcome}", cost, questions)
+            log(notes_path, started, f"{choice.get('source', 'report')} · {choice.get('category', choice['kind'])} · {target} · {outcome}", cost, questions, findings)
             print(f"Logged to {notes_path}")
         sys.exit(code)
 
@@ -583,7 +872,7 @@ def cmd_run(args):
     finish(outcome)
 
 
-def log(notes_path, started, outcome, cost, questions):
+def log(notes_path, started, outcome, cost, questions, findings=()):
     text = notes_path.read_text(encoding="utf-8")
     existing = {q.lower() for q in bullets(sections(text).get("Open questions"))}
     day = started.strftime("%Y-%m-%d")
@@ -595,7 +884,7 @@ def log(notes_path, started, outcome, cost, questions):
             existing.add(line.lower())
     text = add_to_section(text, "Open questions", new_q)
     entry = f"- {started.strftime('%Y-%m-%d %H:%M')} UTC · {outcome}" + (f" · {cost_line(cost)}" if cost else "")
-    text = add_to_section(text, "Run log", [entry])
+    text = add_to_section(text, "Run log", [entry] + [f"  - {f}" for f in findings])
     notes_path.write_text(text, encoding="utf-8")
 
 

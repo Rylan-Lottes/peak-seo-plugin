@@ -2,7 +2,7 @@
 
 Connects a WordPress site to the Peak SEO service. The service reads the site and sends **proposals** (better search titles and descriptions, improved page content, new pages). Nothing changes on the site until it is approved, either by the owner in the WordPress dashboard or, if the owner allows it, by Peak Visibility. Every approved change can be undone.
 
-Version 0.8.0. An early version, built to test the full loop on a test site.
+Version 0.9.0. An early version, built to test the full loop on a test site.
 
 ## What it does
 
@@ -54,6 +54,16 @@ The same report is JSON at `GET /wp-json/peak-seo/v1/gsc-report`. An administrat
 
 Setup in Google: enable the **Google Search Console API** in a Google Cloud project, create a **service account** and a **JSON key**, then in Search Console add the service account email as a user (**Restricted** is enough) under **Settings → Users and permissions**.
 
+### Page Discipline
+
+Rules that keep a site small and every page useful, following the GoBIG Systems local-SEO method. They're shown on **Peak SEO → Search Console** and served to the brain at `GET /discipline`. Every number is a setting under **Settings → Page Discipline** that only people logged in to the site can change; the service can only read them. They're labeled as rules of thumb, not guarantees.
+
+- **Site health:** indexable pages vs pages with any impressions in the last 28 days. Indexable means published, not password-protected, and not noindexed in Yoast, Rank Math, SEOPress or Peak SEO. Below the minimum (default 80%), no new pages.
+- **Competing pages:** two pages splitting impressions for the same search (second page ≥ 20% of the first). The main page has more clicks; the home page never owns a money search, and the home page, contact page and protected pages are never refocused.
+- **Cleanup candidates:** published 3+ months ago, with no impressions, or never in the top 20, over the last 90 days. Pages ranking 20–40 → strengthen; others → merge (proposal kind coming in 0.10.0). Never the home page, contact page, protected pages, or pages marked **Has backlinks**. Both flags are set in the "Peak SEO" box on the page editor, by administrators only. When Google's page list was cut off at 1,000 rows, "no impressions" isn't trusted.
+- **New pages:** at most 2 per calendar month (pending + approved), and only while health is OK. The **plugin refuses** a new-page proposal that breaks either rule (`409 peak_page_discipline`), whatever the brain does.
+- **Recently changed:** pages changed through Peak SEO in the last 28 days are listed so the brain leaves them alone.
+
 ### SEO plugins
 
 Search titles and descriptions are written into whichever SEO plugin the site uses: **Yoast**, **Rank Math** or **SEOPress**. With no SEO plugin, Peak SEO stores and prints its own. **All in One SEO** is detected but not editable yet (it uses its own database table).
@@ -74,7 +84,7 @@ Regular block-editor and classic pages support content edits.
 
 ## Install on a test site
 
-1. Build the zip: `./tools/build-zip.sh` or `python tools/build_zip.py` (creates `dist/peak-seo-0.8.0.zip`). The shell script uses `zip` when installed and falls back to Python, so it works in Git Bash on Windows.
+1. Build the zip: `./tools/build-zip.sh` or `python tools/build_zip.py` (creates `dist/peak-seo-0.9.0.zip`). The shell script uses `zip` when installed and falls back to Python, so it works in Git Bash on Windows.
 2. In WordPress: **Plugins → Add New → Upload Plugin**, choose the zip, **Activate**.
 3. Go to **Peak SEO → Settings** and copy the site key.
 
@@ -119,11 +129,12 @@ X-Peak-Signature: hex(HMAC_SHA256(site_key, "<timestamp>\n<METHOD>\n<route>\n<ra
 | Method | Route | |
 |---|---|---|
 | GET | `/site` | Site name, URL, versions, theme, SEO plugin, page builders, `central_approval`, `approved_facts` |
-| GET | `/pages` | Published pages and posts with SEO fields |
+| GET | `/pages` | Published pages and posts with SEO fields, publish date, indexable/noindex reason, home/contact, protected, has backlinks |
 | GET | `/pages/{id}` | One page, including raw `content`, `rendered` HTML and, on Elementor pages, `elementor_text` |
 | POST | `/proposals` | Submit a proposal (below) |
 | GET | `/proposals?status=pending` | List proposals |
 | GET | `/proposals/{id}` | One proposal with its status, `needs_owner`, `owner_reasons`, `approved_by` and log |
+| GET | `/discipline` | Page Discipline: settings, site health, competing pages, cleanup candidates, new-page allowance, recently changed pages. Administrator **or** signed request |
 | GET | `/gsc-report` | Search Console "what to work on" report. Administrator (Application Password) **or** signed request |
 | POST | `/proposals/{id}/approve` | Approve as Peak Visibility (empty body). Only when central approval is on and the proposal isn't `needs_owner` |
 

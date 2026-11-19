@@ -8,12 +8,16 @@ file, and sends it as a proposal.
 ## What one run does
 
 1. Reads the site (`/site`, `/pages`, `/proposals`).
-2. Picks the single most valuable improvement, in this order:
-   1. **Search titles and descriptions** that are missing or too long (Home first, then pages in the keyword map, then other pages, then posts).
-   2. **Thin pages** (under `thin_word_count` words). Elementor pages get widget text edits; other pages get new body content.
-   3. **New pages** for keyword-map rows marked `new: <slug>`.
+2. Picks the single most valuable improvement from the plugin's Search Console report and Page Discipline data (GoBIG Systems local-SEO order):
+   1. **Competing pages:** refocus the weaker page on a different question, with a link to the main page using the search as link text.
+   2. **Shown often, clicked rarely:** a new search title and description.
+   3. **Strengthen** a page for the searches it ranks 5–30 for (content, question H2s, FAQ, service and town in the H1), then close cleanup candidates.
+   4. **Real gaps:** a new page, only if Page Discipline allows (health, monthly cap) and no page's title, slug or H1 already targets the search. Location pages for other approved towns wait until the owner interview (0.11.0) provides a real job there.
+   5. **Big position drops** are reported (with the Peak SEO changes made in that period), never changed automatically.
 
-   A page with a pending proposal is skipped, as is any page that got the same kind of proposal in the last `cooldown_days`.
+   **Fallback**, when the data is missing, older than the stale-data setting (14 days), too thin, or has nothing to work on: the old checks (missing or too-long search titles, thin pages, keyword-map new pages). The fallback is also subject to the evidence rule and the new-page limit. The console and run log say "from: fallback (why)".
+
+   Pages with a pending proposal, and pages changed in the last 28 days, are skipped, unless the data shows a problem with that page (a big drop).
 3. Asks Claude (`claude-opus-5-5` by default) to write the change, with the whole notes file as the only source of facts. Claude returns structured JSON: the change, the facts it used, and any **open questions** for the owner.
 4. Checks the answer (lengths, known widget ids, nothing empty), prints it, and sends it as a proposal.
 5. **Approves it only if** the owner turned on central approval in the plugin **and** the plugin didn't mark it `needs_owner`. Otherwise it waits in the owner's dashboard.

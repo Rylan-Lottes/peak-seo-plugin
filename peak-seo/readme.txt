@@ -4,7 +4,7 @@ Tags: seo, local seo, search
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 0.8.0
+Stable tag: 0.9.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -23,6 +23,11 @@ Peak SEO is the connector for the Peak SEO service by Peak Visibility. The servi
 This plugin connects to an external service (Peak SEO). It sends no data until you connect it with your site key, and only the Peak SEO service can request your pages.
 
 == Changelog ==
+
+= 0.9.0 =
+* Page Discipline: site health, competing pages, cleanup candidates and a monthly limit on new pages, with settings only you can change.
+* Mark pages as Protected or Has backlinks so they're never suggested for cleanup or refocusing.
+* New pages are refused when this month's limit is reached or site health is too low.
 
 = 0.8.0 =
 * Approved and undone changes update the page's "last modified" date and refresh the SEO plugin's sitemap, so Google knows to look again.

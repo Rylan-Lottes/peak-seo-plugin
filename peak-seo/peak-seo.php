@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Peak SEO
  * Description:       Connects this site to the Peak SEO service. Suggested SEO improvements arrive as proposals that you preview, approve or reject. Nothing changes on your site until you approve it, and every change can be undone.
- * Version:           0.8.0
+ * Version:           0.9.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Peak Visibility
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'PEAK_SEO_VERSION', '0.8.0' );
+define( 'PEAK_SEO_VERSION', '0.9.0' );
 define( 'PEAK_SEO_FILE', __FILE__ );
 define( 'PEAK_SEO_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PEAK_SEO_URL', plugin_dir_url( __FILE__ ) );
@@ -38,6 +38,8 @@ require_once PEAK_SEO_DIR . 'includes/class-proposals.php';
 require_once PEAK_SEO_DIR . 'includes/class-digest.php';
 require_once PEAK_SEO_DIR . 'includes/class-rest.php';
 require_once PEAK_SEO_DIR . 'includes/class-admin.php';
+require_once PEAK_SEO_DIR . 'includes/class-discipline.php';
+require_once PEAK_SEO_DIR . 'includes/class-discipline-admin.php';
 
 add_action( 'init', array( 'Peak_SEO_Proposals', 'register_post_type' ) );
 add_action( 'rest_api_init', array( 'Peak_SEO_Rest', 'register_routes' ) );
@@ -52,6 +54,7 @@ add_action( Peak_SEO_GSC_Pull::HOOK, array( 'Peak_SEO_GSC_Pull', 'cron' ) );
 
 if ( is_admin() ) {
 	Peak_SEO_Admin::init();
+	Peak_SEO_Discipline_Admin::init();
 }
 
 register_activation_hook( __FILE__, 'peak_seo_activate' );

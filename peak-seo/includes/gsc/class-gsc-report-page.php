@@ -33,6 +33,8 @@ class Peak_SEO_GSC_Report_Page {
 			echo '<div class="peak-empty">' . esc_html( $r['message'] ) . '</div></div>';
 			return;
 		}
+		Peak_SEO_Discipline_Admin::render_report_section();
+		echo '<h2 style="margin-top:32px">What to work on</h2>';
 		if ( $r['truncated'] ) {
 			echo '<p class="description">Some lists reached Google’s 1,000-row limit, so the smallest searches are left out. That doesn’t change the lists below.</p>';
 		}

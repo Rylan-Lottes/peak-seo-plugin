@@ -198,6 +198,37 @@ class Peak_SEO_GSC_Store {
 	}
 
 	/**
+	 * Ids of successful pulls since a time (unix seconds), newest first.
+	 */
+	public static function pulls_since( $property, $since ) {
+		global $wpdb;
+		$pulls = self::pulls_table();
+		$ids   = $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$pulls} WHERE property = %s AND status = 'ok' AND pulled_at >= %s ORDER BY pulled_at DESC", $property, gmdate( 'Y-m-d H:i:s', (int) $since ) ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
+		return array_map( 'intval', (array) $ids );
+	}
+
+	/**
+	 * Only some datasets of one period of a pull (cheaper than data()).
+	 *
+	 * @return array [ dataset => [ 'rows' => [...], 'truncated' => bool ] ]
+	 */
+	public static function data_sets( $pull_id, $period, array $datasets ) {
+		global $wpdb;
+		$table = self::data_table();
+		$in    = implode( ',', array_fill( 0, count( $datasets ), '%s' ) );
+		$rows  = $wpdb->get_results( $wpdb->prepare( "SELECT dataset, truncated, data FROM {$table} WHERE pull_id = %d AND period = %s AND dataset IN ({$in})", array_merge( array( (int) $pull_id, (string) $period ), $datasets ) ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders, WordPress.DB.DirectDatabaseQuery
+		$out   = array();
+		foreach ( (array) $rows as $r ) {
+			$list                 = json_decode( (string) $r['data'], true );
+			$out[ $r['dataset'] ] = array(
+				'rows'      => array_map( array( __CLASS__, 'expand' ), is_array( $list ) ? $list : array() ),
+				'truncated' => (bool) $r['truncated'],
+			);
+		}
+		return $out;
+	}
+
+	/**
 	 * Count, oldest pull, total size of stored data.
 	 */
 	public static function stats( $property ) {

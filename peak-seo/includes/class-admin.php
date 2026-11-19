@@ -172,6 +172,7 @@ class Peak_SEO_Admin {
 			'gsc_saved'   => 'Search Console settings saved. Click Test connection to check them.',
 			'gsc_removed' => 'Search Console key removed. Peak SEO no longer contacts Google. Data already pulled is kept.',
 			'gsc_pulled'  => 'Search Console data pulled and saved.',
+			'discipline'  => 'Page Discipline saved.',
 		);
 		if ( isset( $msgs[ $done ] ) ) {
 			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( $msgs[ $done ] ) . '</p></div>';
@@ -410,6 +411,7 @@ class Peak_SEO_Admin {
 		echo '<input type="hidden" name="action" value="peak_seo_send_digest" />';
 		echo '<button type="submit" class="button">Send this week&rsquo;s summary now</button></form>';
 
+		Peak_SEO_Discipline_Admin::render_settings();
 		self::render_gsc_settings();
 
 		echo '<h2>Disconnect or reset</h2><p>Creating a new key immediately disconnects anything using the old one.</p>';

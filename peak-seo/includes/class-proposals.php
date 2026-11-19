@@ -117,6 +117,18 @@ class Peak_SEO_Proposals {
 		$clean = array();
 
 		if ( 'create_page' === $kind ) {
+			// Page Discipline: monthly cap and site health, enforced here as well as in the brain.
+			$d       = Peak_SEO_Discipline::settings();
+			$health  = null;
+			$latest  = Peak_SEO_GSC::property() ? Peak_SEO_GSC_Store::latest( Peak_SEO_GSC::property(), true ) : null;
+			if ( $latest ) {
+				$cur    = Peak_SEO_GSC_Store::data_sets( $latest['id'], 'current', array( 'page' ) );
+				$health = Peak_SEO_Discipline::health( Peak_SEO_Discipline::site_pages(), $cur['page']['rows'] ?? array() );
+			}
+			$allow = Peak_SEO_Discipline::new_page_allowance( $health, Peak_SEO_Discipline::new_pages_this_month(), $d );
+			if ( ! $allow['allowed'] ) {
+				return new WP_Error( 'peak_page_discipline', 'Page Discipline: ' . implode( ' ', $allow['reasons'] ), array( 'status' => 409 ) );
+			}
 			if ( empty( $changes['title'] ) || empty( $changes['content'] ) ) {
 				return self::error( 'peak_missing', 'New pages need a title and content.' );
 			}

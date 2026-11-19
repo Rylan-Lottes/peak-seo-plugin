@@ -5,3 +5,5 @@ service/.venv/
 # Real site folders hold client notes; keep them out of git.
 service/sites/*
 !service/sites/README.md
+tests/php/test_sa_key.pem
+tests/php/wp-admin/
