@@ -142,6 +142,9 @@ class Peak_SEO_GSC_Pull {
 			return new WP_Error( 'peak_gsc_save', 'The data was downloaded but could not be saved to the database.' );
 		}
 		$pruned = Peak_SEO_GSC_Store::prune( $now );
+		if ( method_exists( $client, 'list_sitemaps' ) ) {
+			Peak_SEO_Freshness::store_sitemaps( $client, $property, $now ); // Optional extra: errors are ignored.
+		}
 
 		return array(
 			'pull_id' => $id,

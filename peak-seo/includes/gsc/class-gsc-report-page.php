@@ -26,6 +26,7 @@ class Peak_SEO_GSC_Report_Page {
 		$when = strtotime( $r['pulled_at'] );
 		echo '<p class="peak-intro"><code>' . esc_html( $r['property'] ) . '</code> · ' . esc_html( self::range( $r['current'], $fmt ) ) . ', compared with ' . esc_html( self::range( $r['previous'], $fmt ) ) . '. Data pulled ' . esc_html( human_time_diff( $when ) ) . ' ago (<a href="' . esc_url( $settings ) . '">pull again</a>).</p>';
 
+		self::checks_box( $r['property'] );
 		self::totals( $r['totals'] );
 
 		if ( ! $r['enough_data'] ) {
@@ -98,6 +99,24 @@ class Peak_SEO_GSC_Report_Page {
 
 		echo '<p class="description">Position is the average position in Google (1 = top). Lists show searches and pages above minimum impression counts, so tiny numbers don’t create noise. The same report is available as JSON at <code>' . esc_html( rest_url( Peak_SEO_Rest::NS . '/gsc-report' ) ) . '</code> for an administrator (Application Password) or a signed Peak SEO request.</p>';
 		echo '</div>';
+	}
+
+	/**
+	 * "Can Google see your changes?" checks (also shown in Settings).
+	 */
+	public static function checks_box( $property ) {
+		$labels = array(
+			'error'   => 'Fix this',
+			'warning' => 'Check this',
+			'ok'      => 'OK',
+		);
+		foreach ( Peak_SEO_Freshness::checks( $property ) as $c ) {
+			echo '<div class="peak-check-box peak-check-' . esc_attr( $c['level'] ) . '"><strong>' . esc_html( $labels[ $c['level'] ] . ': ' . $c['title'] ) . '</strong><p>' . esc_html( $c['detail'] );
+			if ( ! empty( $c['link'] ) ) {
+				echo ' <a href="' . esc_url( $c['link'] ) . '" target="_blank" rel="noopener">Open</a>';
+			}
+			echo '</p></div>';
+		}
 	}
 
 	private static function totals( $t ) {

@@ -510,6 +510,8 @@ class Peak_SEO_Admin {
 		}
 		echo '</td></tr></tbody></table>';
 
+		Peak_SEO_GSC_Report_Page::checks_box( $property );
+
 		self::gsc_form_open( 'peak_seo_gsc_pull' );
 		echo '<button type="submit" class="button button-primary" onclick="this.disabled=true;this.textContent=\'Pulling… (up to a minute)\';this.form.submit();">Pull now</button></form>';
 		echo '<p class="description">Downloads the last 28 days (ending 3 days ago) and the 28 days before: totals, top queries, top pages and query+page pairs.</p>';

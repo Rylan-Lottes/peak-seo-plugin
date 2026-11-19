@@ -21,6 +21,7 @@ foreach ( array( 'peak_seo_gsc_auth', 'peak_seo_gsc_key', 'peak_seo_gsc_identity
 	delete_option( $peak_opt );
 }
 delete_transient( 'peak_seo_gsc_token' );
+delete_option( 'peak_seo_gsc_sitemaps' );
 delete_transient( 'peak_seo_gsc_pull_lock' );
 wp_clear_scheduled_hook( 'peak_seo_gsc_weekly_pull' );
 

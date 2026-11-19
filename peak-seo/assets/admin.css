@@ -45,3 +45,8 @@
 .peak-seo .peak-report { max-width: 1100px; }
 .peak-seo .peak-report td { vertical-align: top; }
 .peak-seo .peak-none { color: #50575e; font-style: italic; }
+.peak-seo .peak-check-box { border-left: 4px solid #dcdcde; background: #fff; padding: 10px 14px; margin: 10px 0; max-width: 960px; }
+.peak-seo .peak-check-box p { margin: 4px 0 0; font-size: 13px; }
+.peak-seo .peak-check-error { border-left-color: #d63638; }
+.peak-seo .peak-check-warning { border-left-color: #dba617; }
+.peak-seo .peak-check-ok { border-left-color: #00a32a; }

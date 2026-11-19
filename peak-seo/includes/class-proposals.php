@@ -408,6 +408,7 @@ class Peak_SEO_Proposals {
 		update_post_meta( $id, '_peak_approved_user', self::BY_OWNER === $by ? get_current_user_id() : 0 );
 		update_post_meta( $id, '_peak_approved_at', gmdate( 'c' ) );
 		self::log( $id, 'approved', $by );
+		Peak_SEO_Freshness::touch( $target ); // New "last modified" date in the sitemap, so Google looks again.
 		return true;
 	}
 
@@ -459,6 +460,9 @@ class Peak_SEO_Proposals {
 
 		update_post_meta( $id, '_peak_status', 'undone' );
 		self::log( $id, 'undone' );
+		if ( 'create_page' !== $p['kind'] ) {
+			Peak_SEO_Freshness::touch( $p['target_id'] ); // The page changed back: tell Google again.
+		}
 		return true;
 	}
 

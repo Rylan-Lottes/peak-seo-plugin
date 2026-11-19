@@ -63,7 +63,9 @@ class Peak_SEO_Rest {
 	}
 
 	public static function gsc_report() {
-		return rest_ensure_response( Peak_SEO_GSC_Report::build() );
+		$report                 = Peak_SEO_GSC_Report::build();
+		$report['google_sees_changes'] = Peak_SEO_Freshness::checks( $report['property'] ?? '' ); // Not cached: reads live settings.
+		return rest_ensure_response( $report );
 	}
 
 	public static function site() {

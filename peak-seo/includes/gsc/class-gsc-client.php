@@ -39,6 +39,17 @@ class Peak_SEO_GSC_Client {
 	}
 
 	/**
+	 * Sitemaps submitted for the property (read-only).
+	 * https://developers.google.com/webmaster-tools/v1/sitemaps/list
+	 *
+	 * @return array|WP_Error
+	 */
+	public function list_sitemaps( $property ) {
+		$r = $this->request( 'GET', 'sites/' . rawurlencode( $property ) . '/sitemaps', null, $property );
+		return is_wp_error( $r ) ? $r : ( isset( $r['sitemap'] ) && is_array( $r['sitemap'] ) ? $r['sitemap'] : array() );
+	}
+
+	/**
 	 * Search Analytics query.
 	 * https://developers.google.com/webmaster-tools/v1/searchanalytics/query
 	 *
